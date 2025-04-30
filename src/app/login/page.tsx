@@ -90,12 +90,12 @@ export default function LoginPage() {
      // Apply a subtle gradient background and center the content
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary/10 via-background to-background p-4">
        {/* Use Card component for better structure and styling */}
-       <Card className="w-full max-w-md shadow-xl border-t-4 border-primary rounded-lg overflow-hidden">
+       <Card className="w-full max-w-md shadow-xl border-t-4 border-primary rounded-lg overflow-hidden flex flex-col justify-center">
          <CardHeader className="text-center bg-primary/5 p-6">
             <div className="mx-auto bg-primary rounded-full p-3 w-fit mb-4 text-primary-foreground">
                 <LogIn size={28} />
             </div>
-          <CardTitle className="text-3xl font-bold tracking-tight">Welcome Back!</CardTitle>
+          <CardTitle className="text-3xl font-bold tracking-tight text-center">Welcome Back!</CardTitle>
           <CardDescription className="text-lg text-muted-foreground">Log in to continue to RealCollab</CardDescription>
         </CardHeader>
         <CardContent className="p-6 space-y-6"> {/* Increased padding and spacing */}
