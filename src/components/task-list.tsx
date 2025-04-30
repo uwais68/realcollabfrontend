@@ -12,9 +12,9 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
-import { Trash2, Edit, RefreshCcw } from 'lucide-react';
+import { Trash2, Edit, RefreshCcw, Eye } from 'lucide-react'; // Added Eye icon
 import { getAllTasks, deleteTask, updateTask, type Task, type UpdateTaskData, getAllUsers } from '@/services/realcollab';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, isPast } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -28,17 +28,19 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { AlertDialogTrigger } from '@radix-ui/react-alert-dialog';
-import { buttonVariants } from '@/components/ui/button'; // Import buttonVariants
-import type { User } from '@/context/AuthContext'; // Import User type
+import { buttonVariants } from '@/components/ui/button';
+import type { User } from '@/context/AuthContext';
+import { cn } from '@/lib/utils'; // Import cn utility
 
 interface TaskListProps {
   limit?: number; // Optional limit for dashboard view
   refreshKey?: number; // Optional key to trigger refresh from parent
-  onEditTask?: (task: Task) => void; // Callback to handle edit action
+  onEditTask: (task: Task) => void; // Callback to handle edit action
+  onViewTask: (task: Task) => void; // Callback to handle view action
 }
 
 
-export function TaskList({ limit, refreshKey, onEditTask }: TaskListProps) {
+export function TaskList({ limit, refreshKey, onEditTask, onViewTask }: TaskListProps) {
   const [tasks, setTasks] = React.useState<Task[]>([]);
   const [users, setUsers] = React.useState<Map<string, Partial<User>>>(new Map()); // Map userId -> User details
   const [loading, setLoading] = React.useState(true);
@@ -73,7 +75,19 @@ export function TaskList({ limit, refreshKey, onEditTask }: TaskListProps) {
     setError(null);
     try {
       const fetchedTasks = await getAllTasks();
-      const sortedTasks = fetchedTasks.sort((a, b) => parseISO(b.createdAt).getTime() - parseISO(a.createdAt).getTime());
+       // Sort by creation date DESC (newest first), then by status (Pending > In Progress > Completed)
+       const statusOrder: Record<Task['status'], number> = { 'Pending': 1, 'In Progress': 2, 'Completed': 3 };
+      const sortedTasks = fetchedTasks.sort((a, b) => {
+          if (a.status !== b.status) {
+              return statusOrder[a.status] - statusOrder[b.status]; // Sort by status first
+          }
+           if (a.dueDate && b.dueDate) {
+              return parseISO(a.dueDate).getTime() - parseISO(b.dueDate).getTime(); // Then by due date ASC
+           }
+           if (a.dueDate) return -1; // Tasks with due date first
+           if (b.dueDate) return 1;
+          return parseISO(b.createdAt).getTime() - parseISO(a.createdAt).getTime(); // Fallback to creation date DESC
+      });
       setTasks(sortedTasks);
     } catch (err) {
       console.error('Failed to fetch tasks:', err);
@@ -129,7 +143,7 @@ export function TaskList({ limit, refreshKey, onEditTask }: TaskListProps) {
          description: `Task status changed to ${newStatus}.`,
        });
        // Optionally refetch tasks to ensure consistency, or rely on optimistic update
-       // await fetchTasks(false); // Fetch without showing loading spinner
+        fetchTasks(false); // Refetch to get correct sorting after status change
     } catch (error) {
        console.error(`Failed to update task ${taskId} status:`, error);
         // Rollback optimistic update
@@ -153,7 +167,6 @@ export function TaskList({ limit, refreshKey, onEditTask }: TaskListProps) {
        toast({
          title: "Task Deleted",
          description: `Task has been successfully deleted.`,
-         // variant: "destructive", // Use default variant for success
        });
         // No need to refetch if optimistic update is sufficient
     } catch (error) {
@@ -169,30 +182,29 @@ export function TaskList({ limit, refreshKey, onEditTask }: TaskListProps) {
     }
   };
 
-  const handleEdit = (task: Task) => {
-    console.log(`Editing task ${task._id}`);
-    if (onEditTask) {
-        onEditTask(task);
-    } else {
-         toast({
-          title: "Edit Action Unavailable",
-          description: `Edit action for task "${task.title}" is not configured in this context.`,
-          variant: "default",
-        });
-    }
-  };
+  const handleEdit = (e: React.MouseEvent, task: Task) => {
+      e.stopPropagation(); // Prevent row click event when clicking edit button
+      console.log(`Editing task ${task._id}`);
+      onEditTask(task);
+   };
 
-   const getBadgeVariant = (status: Task['status']): "secondary" | "default" | "outline" | "destructive" => {
+   const handleView = (task: Task) => {
+       console.log(`Viewing task ${task._id}`);
+       onViewTask(task);
+   }
+
+   const getBadgeVariant = (status: Task['status']): "secondary" | "default" | "outline" => {
     switch (status) {
-        case 'Completed':
-            return 'secondary'; // Greyed out or similar
-        case 'In Progress':
-            return 'outline'; // Often blue or default outline
-        case 'Pending':
-        default:
-            return 'default'; // Primary color (Teal in this theme)
+        case 'Completed': return 'secondary'; // Greyed out or similar
+        case 'In Progress': return 'outline'; // Often blue or default outline
+        case 'Pending': default: return 'default'; // Primary color (Teal in this theme)
     }
    };
+
+   const isTaskOverdue = (task: Task): boolean => {
+       return task.status !== 'Completed' && !!task.dueDate && isPast(parseISO(task.dueDate));
+   }
+
 
   const displayedTasks = limit ? tasks.slice(0, limit) : tasks;
 
@@ -244,8 +256,17 @@ export function TaskList({ limit, refreshKey, onEditTask }: TaskListProps) {
           </TableHeader>
           <TableBody>
             {displayedTasks.map((task) => (
-              <TableRow key={task._id} data-state={task.status === 'Completed' ? 'completed' : undefined} className={task.status === 'Completed' ? 'opacity-70' : ''}>
-                <TableCell>
+              <TableRow
+                key={task._id}
+                data-state={task.status === 'Completed' ? 'completed' : undefined}
+                className={cn(
+                    "cursor-pointer hover:bg-muted/50", // Make row clickable
+                    task.status === 'Completed' ? 'opacity-70' : '',
+                    isTaskOverdue(task) && 'border-l-2 border-l-destructive' // Add indicator for overdue
+                   )}
+                onClick={() => handleView(task)} // Trigger view details on row click
+                >
+                <TableCell onClick={(e) => e.stopPropagation()} className="cursor-default"> {/* Stop propagation on checkbox click */}
                   <Checkbox
                     checked={task.status === 'Completed'}
                     onCheckedChange={() => handleStatusChange(task._id, task.status)}
@@ -259,12 +280,16 @@ export function TaskList({ limit, refreshKey, onEditTask }: TaskListProps) {
                     {task.status}
                   </Badge>
                 </TableCell>
-                <TableCell>
+                <TableCell className={cn(isTaskOverdue(task) && 'text-destructive font-medium')}>
                   {task.dueDate ? format(parseISO(task.dueDate), 'PPP') : <span className="text-muted-foreground">N/A</span>}
                 </TableCell>
                 <TableCell>{getUserNameById(task.assignedTo)}</TableCell>
-                <TableCell className="text-right space-x-1">
-                  <Button variant="ghost" size="icon" onClick={() => handleEdit(task)} aria-label={`Edit task ${task.title}`}>
+                <TableCell className="text-right space-x-1" onClick={(e) => e.stopPropagation()}> {/* Stop propagation on action buttons click */}
+                  {/* View Button (Optional, as row click does the same) */}
+                   {/* <Button variant="ghost" size="icon" onClick={() => handleView(task)} aria-label={`View task ${task.title}`}>
+                     <Eye className="h-4 w-4" />
+                   </Button> */}
+                  <Button variant="ghost" size="icon" onClick={(e) => handleEdit(e, task)} aria-label={`Edit task ${task.title}`}>
                     <Edit className="h-4 w-4" />
                   </Button>
                    <AlertDialog>
@@ -298,3 +323,4 @@ export function TaskList({ limit, refreshKey, onEditTask }: TaskListProps) {
     </div>
   );
 }
+

@@ -20,6 +20,11 @@ type MessageId = string;
  */
 type ChatRoomId = string;
 
+/**
+ * Represents a Milestone ID (string representation of ObjectId).
+ */
+type MilestoneId = string;
+
 
 /**
  * Represents a Task based on the Mongoose schema.
@@ -131,6 +136,10 @@ export interface ChatMessage {
    * Receiver's ID (potentially added client-side for socket messages).
    */
   receiverId?: string;
+   /**
+   * Indicates if the message is deleted for the current user (client-side check).
+   */
+    deletedForCurrentUser?: boolean;
 }
 
 
@@ -166,6 +175,22 @@ export interface Notification {
    * Read status
    */
    read?: boolean; // Optional read status
+}
+
+/**
+ * Represents a Milestone based on the Mongoose schema.
+ */
+export interface Milestone {
+  _id: MilestoneId;
+  task: TaskId;
+  milestoneName: string;
+  dueDate: string; // ISO string date
+  completionDate?: string; // ISO string date
+  isAchieved: boolean;
+  priority?: 'Low' | 'Medium' | 'High';
+  comments?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 
@@ -286,8 +311,6 @@ export async function getAllTasks(): Promise<Task[]> {
   }
 
   const data = await response.json();
-  // Backend might return tasks directly or nested, adjust if necessary
-  // Check if data has a 'tasks' property or if it's the array itself
   // Based on API routes, /all returns the array directly.
   const tasks = Array.isArray(data) ? data : [];
   console.log(`Fetched ${tasks.length} tasks.`);
@@ -420,68 +443,7 @@ export async function getAllNotifications(): Promise<Notification[]> {
    return data as Notification[];
 }
 
-// --- Chat API Calls (OLD - Keep for reference or remove if superseded by Message API) ---
-
-// /**
-//  * Sends a chat message via the API.
-//  * Requires authentication.
-//  * @param messageData The data for the message to send.
-//  * @returns A promise resolving to the sent ChatMessage.
-//  * @throws Error if sending fails.
-//  */
-//  export async function sendChatMessage(messageData: SendMessageData): Promise<ChatMessage> {
-//     console.log(`Sending message to room ${messageData.chatRoom}...`);
-//      const response = await fetch(`${API_BASE_URL}/chat/send`, { // Use the correct route path
-//          method: 'POST',
-//          headers: getHeaders(),
-//          body: JSON.stringify(messageData),
-//      });
-
-//      if (!response.ok) {
-//          if (response.status === 401 || response.status === 403) {
-//              throw new Error("Unauthorized: Cannot send message.");
-//          }
-//          const errorData = await response.json().catch(() => ({ message: 'Failed to send message' }));
-//          console.error('API Error (Send Message):', response.status, errorData);
-//          throw new Error(errorData.message || `Failed to send message (${response.status})`);
-//      }
-
-//      const data = await response.json();
-//      // The backend returns { message: "Message sent!", data: message }
-//      return data.data as ChatMessage;
-//  }
-
-
-// /**
-//  * Asynchronously retrieves all chat messages for a given chat room.
-//  * Requires authentication.
-//  * @param chatRoomId The ID of the chat room.
-//  * @returns A promise that resolves to an array of ChatMessage objects.
-//  * @throws Throws an error if fetching fails or if not authenticated.
-//  */
-// export async function getAllChatMessages(chatRoomId: ChatRoomId): Promise<ChatMessage[]> {
-//    console.log(`Fetching messages for room: ${chatRoomId}...`);
-//     // Ensure the API endpoint matches the route definition: /api/chat/:chatRoom/messages
-//    const response = await fetch(`${API_BASE_URL}/chat/${chatRoomId}/messages`, {
-//        method: 'GET',
-//        headers: getHeaders(),
-//    });
-
-//    if (!response.ok) {
-//        if (response.status === 401 || response.status === 403) {
-//            throw new Error("Unauthorized: Please log in to view messages.");
-//        }
-//        const errorData = await response.json().catch(() => ({ message: `Failed to fetch messages for room ${chatRoomId}` }));
-//        console.error(`API Error (Get Messages for ${chatRoomId}):`, response.status, errorData);
-//        throw new Error(errorData.message || `Failed to fetch messages (${response.status})`);
-//    }
-
-//    const data = await response.json();
-//    // API returns the array of messages directly
-//    return data as ChatMessage[];
-// }
-
-// --- New Message API Calls (/api/messages) ---
+// --- Message API Calls (/api/messages) ---
 
 /**
  * Data needed to send a new message.
@@ -655,7 +617,6 @@ export async function getAllMessages(chatRoomId: ChatRoomId): Promise<ChatMessag
 
 // --- User API Calls ---
 
-// Potentially add a function to get user details (e.g., for mapping IDs to names)
 /**
  * Asynchronously retrieves details for a specific user.
  * Requires authentication.
@@ -726,7 +687,6 @@ export async function getAllMessages(chatRoomId: ChatRoomId): Promise<ChatMessag
  }
 
 
- // Placeholder for getting current user's info (maybe from token or a /me endpoint)
  /**
   * Gets the current user's information (e.g., from a '/api/user/me' endpoint).
   * Requires authentication.
@@ -755,4 +715,318 @@ export async function getAllMessages(chatRoomId: ChatRoomId): Promise<ChatMessag
      return safeUserData as Partial<User>;
  }
 
-    
+
+ // --- Milestone API Calls ---
+
+ /**
+  * Type for creating a new milestone. Excludes fields generated by the backend.
+  */
+ export type CreateMilestoneData = Pick<Milestone, 'task' | 'milestoneName' | 'dueDate' | 'priority' | 'comments'>;
+
+ /**
+  * Creates a new milestone for a task via the API.
+  * Requires authentication.
+  * @param milestoneData The data for the new milestone.
+  * @returns A promise that resolves to the created Milestone object.
+  * @throws Throws an error if the creation fails or if not authenticated.
+  */
+ export async function createMilestone(milestoneData: CreateMilestoneData): Promise<{ message: string; newMilestone: Milestone }> {
+    console.log('Creating milestone for task:', milestoneData.task);
+    const response = await fetch(`${API_BASE_URL}/milestone/create`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(milestoneData),
+    });
+
+    if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+            throw new Error("Unauthorized: Cannot create milestone.");
+        }
+        const errorData = await response.json().catch(() => ({ message: 'Failed to create milestone' }));
+        console.error('API Error (Create Milestone):', response.status, errorData);
+        throw new Error(errorData.message || `Failed to create milestone (${response.status})`);
+    }
+    return response.json(); // Backend returns { message: "...", newMilestone: {...} }
+ }
+
+ /**
+  * Retrieves all milestones for a specific task via the API.
+  * Requires authentication.
+  * @param taskId The ID of the task whose milestones are to be fetched.
+  * @returns A promise that resolves to an array of Milestone objects.
+  * @throws Throws an error if fetching fails or if not authenticated.
+  */
+ export async function getMilestonesForTask(taskId: TaskId): Promise<Milestone[]> {
+    console.log(`Fetching milestones for task: ${taskId}...`);
+    const response = await fetch(`${API_BASE_URL}/milestone/${taskId}`, {
+        method: 'GET',
+        headers: getHeaders(),
+    });
+
+    if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+            throw new Error("Unauthorized: Please log in to view milestones.");
+        }
+        const errorData = await response.json().catch(() => ({ message: `Failed to fetch milestones for task ${taskId}` }));
+        console.error(`API Error (Get Milestones for Task ${taskId}):`, response.status, errorData);
+        throw new Error(errorData.message || `Failed to fetch milestones (${response.status})`);
+    }
+
+    const data = await response.json();
+    // Backend returns { milestones: [...] }
+    return data.milestones as Milestone[];
+ }
+
+ /**
+  * Marks a milestone as achieved via the API.
+  * Requires authentication.
+  * @param milestoneId The ID of the milestone to mark as achieved.
+  * @returns A promise that resolves to the updated Milestone object.
+  * @throws Throws an error if the update fails or if not authenticated.
+  */
+ export async function markMilestoneAchieved(milestoneId: MilestoneId): Promise<{ message: string; milestone: Milestone }> {
+    console.log(`Marking milestone ${milestoneId} as achieved...`);
+    const response = await fetch(`${API_BASE_URL}/milestone/${milestoneId}/achieved`, {
+        method: 'PUT',
+        headers: getHeaders(),
+        // No body needed for this specific action as per the route
+    });
+
+    if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+            throw new Error("Unauthorized: Cannot mark milestone as achieved.");
+        }
+        const errorData = await response.json().catch(() => ({ message: 'Failed to mark milestone as achieved' }));
+        console.error('API Error (Mark Milestone Achieved):', response.status, errorData);
+        throw new Error(errorData.message || `Failed to mark milestone as achieved (${response.status})`);
+    }
+    return response.json(); // Backend returns { message: "...", milestone: {...} }
+ }
+
+```
+    </content>
+  </change>
+  <change>
+    <file>src/components/add-milestone-form.tsx</file>
+    <description>Create AddMilestoneForm component to add milestones to tasks.</description>
+    <content><![CDATA['use client';
+
+import * as React from 'react';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useForm } from 'react-hook-form';
+import * as z from 'zod';
+import { format } from 'date-fns';
+import { CalendarIcon, Target } from 'lucide-react';
+
+import { Button } from '@/components/ui/button';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { cn } from '@/lib/utils';
+import { useToast } from "@/hooks/use-toast";
+import { createMilestone, type CreateMilestoneData, type TaskId } from '@/services/realcollab'; // Import API function and types
+
+const MILESTONE_PRIORITIES = ['Low', 'Medium', 'High'] as const;
+
+// Form schema based on CreateMilestoneData
+const formSchema = z.object({
+  // task ID is passed as a prop, not part of the form fields directly
+  milestoneName: z.string().min(2, {
+    message: 'Milestone name must be at least 2 characters.',
+  }),
+  dueDate: z.date({
+    required_error: "A due date is required.",
+  }),
+  priority: z.enum(MILESTONE_PRIORITIES).optional().default('Medium'),
+  comments: z.string().optional(),
+});
+
+// Infer the type for the form based on the schema
+type MilestoneFormValues = z.infer<typeof formSchema>;
+
+interface AddMilestoneFormProps {
+  taskId: TaskId;
+  onMilestoneAdded: () => void;
+  onCancel: () => void;
+}
+
+export function AddMilestoneForm({ taskId, onMilestoneAdded, onCancel }: AddMilestoneFormProps) {
+  const { toast } = useToast();
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
+
+  const form = useForm<MilestoneFormValues>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      milestoneName: '',
+      priority: 'Medium',
+      comments: '',
+      dueDate: undefined, // Start with no date selected
+    },
+  });
+
+  async function onSubmit(values: MilestoneFormValues) {
+    setIsSubmitting(true);
+    try {
+      // Prepare data for API call
+      const apiData: CreateMilestoneData = {
+        task: taskId, // Add the task ID
+        milestoneName: values.milestoneName,
+        dueDate: values.dueDate.toISOString(), // Convert date to ISO string
+        priority: values.priority,
+        comments: values.comments,
+      };
+
+      console.log('Submitting milestone data to API:', apiData);
+      const result = await createMilestone(apiData);
+      console.log('Milestone created successfully:', result.newMilestone);
+
+      toast({
+        title: "Milestone Created",
+        description: `Milestone "${result.newMilestone.milestoneName}" added successfully.`,
+      });
+      form.reset(); // Reset form after successful submission
+      onMilestoneAdded(); // Callback to notify parent component
+
+    } catch (error) {
+      console.error('Failed to create milestone:', error);
+      const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred.';
+      toast({
+        title: "Error Creating Milestone",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+        <FormField
+          control={form.control}
+          name="milestoneName"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Milestone Name</FormLabel>
+              <FormControl>
+                <Input placeholder="Define the milestone objective" {...field} disabled={isSubmitting}/>
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <div className="grid grid-cols-2 gap-4">
+         <FormField
+            control={form.control}
+            name="dueDate"
+            render={({ field }) => (
+              <FormItem className="flex flex-col pt-2">
+                <FormLabel>Due Date</FormLabel>
+                 <Popover>
+                    <PopoverTrigger asChild>
+                    <FormControl>
+                        <Button
+                        variant={"outline"}
+                        className={cn(
+                            "w-full justify-start text-left font-normal",
+                            !field.value && "text-muted-foreground"
+                        )}
+                         disabled={isSubmitting}
+                        >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
+                        </Button>
+                    </FormControl>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                        mode="single"
+                        selected={field.value}
+                        onSelect={field.onChange}
+                        disabled={(date) =>
+                          date < new Date(new Date().setHours(0, 0, 0, 0)) || isSubmitting // Disable past dates and during submit
+                        }
+                        initialFocus
+                    />
+                    </PopoverContent>
+                </Popover>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="priority"
+            render={({ field }) => (
+              <FormItem className="pt-2">
+                <FormLabel>Priority</FormLabel>
+                <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isSubmitting}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select priority" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {MILESTONE_PRIORITIES.map((priority) => (
+                      <SelectItem key={priority} value={priority}>
+                        {priority}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <FormField
+          control={form.control}
+          name="comments"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Comments (Optional)</FormLabel>
+              <FormControl>
+                <Textarea placeholder="Add any relevant notes or details" {...field} disabled={isSubmitting}/>
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+         <div className="flex justify-end space-x-2 pt-4">
+            <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting}>
+                Cancel
+            </Button>
+            <Button type="submit" disabled={isSubmitting}>
+             <Target className="mr-2 h-4 w-4" /> {/* Icon for adding */}
+              {isSubmitting ? 'Adding Milestone...' : 'Add Milestone'}
+            </Button>
+         </div>
+      </form>
+    </Form>
+  );
+}

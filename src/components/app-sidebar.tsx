@@ -3,7 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Home, ListChecks, MessageSquare, Bell, LogOut, UserCircle } from 'lucide-react';
+import { Home, ListChecks, MessageSquare, Bell, LogOut, UserCircle } from 'lucide-react'; // Removed Target icon
 
 import {
   Sidebar,
@@ -14,36 +14,34 @@ import {
   SidebarMenuButton,
   SidebarTrigger,
   SidebarMenuBadge,
-  SidebarFooter, // Import SidebarFooter
-  SidebarSeparator, // Import SidebarSeparator
+  SidebarFooter,
+  SidebarSeparator,
 } from '@/components/ui/sidebar';
 import { useSocket } from '@/context/SocketContext';
-import { useAuth } from '@/context/AuthContext'; // Import useAuth
+import { useAuth } from '@/context/AuthContext';
 import type { Notification } from '@/services/realcollab';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'; // Import Avatar
-import { Button } from './ui/button'; // Import Button for logout
-import { Skeleton } from './ui/skeleton'; // Import Skeleton for loading state
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Button } from './ui/button';
+import { Skeleton } from './ui/skeleton';
 
 export function AppSidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { notifications } = useSocket();
-  const { user, logout, isLoading } = useAuth(); // Get user, logout function, and loading state
+  const { user, logout, isLoading } = useAuth();
   const [unreadCount, setUnreadCount] = React.useState(0);
 
   React.useEffect(() => {
-    // Simple count for now, could be expanded to track read status
-    const unread = notifications.filter(n => !n.read).length; // Assuming 'read' property exists
+    const unread = notifications.filter(n => !n.read).length;
     setUnreadCount(unread);
   }, [notifications]);
 
   const handleLogout = () => {
     logout();
     // No need to redirect here, AuthProvider handles redirect on user change
-    // router.push('/login');
   };
 
-  const isActive = (path: string) => pathname === path;
+  const isActive = (path: string) => pathname === path || (path !== '/' && pathname.startsWith(path)); // Make parent paths active too
 
   const getUserInitials = (firstName?: string, lastName?: string) => {
     const first = firstName?.[0] || '';
@@ -90,6 +88,7 @@ export function AppSidebar() {
               </SidebarMenuButton>
             </Link>
           </SidebarMenuItem>
+          {/* Milestones link removed */}
           <SidebarMenuItem>
             <Link href="/chat" passHref legacyBehavior>
               <SidebarMenuButton
@@ -133,7 +132,6 @@ export function AppSidebar() {
           ) : user ? (
             <div className="flex flex-col gap-2 group-data-[collapsible=icon]:items-center">
               <SidebarMenuItem>
-                 {/* Use a div or non-interactive element if not linking */}
                 <div className="flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm transition-[width,height,padding]">
                    <Avatar className="h-8 w-8">
                       <AvatarImage src={user.profilePicture} alt={`${user.firstName} ${user.lastName}`} />
@@ -157,7 +155,7 @@ export function AppSidebar() {
                <Link href="/login" passHref legacyBehavior>
                   <SidebarMenuButton tooltip="Login">
                      <a>
-                       <LogOut /> {/* Using LogOut icon for Login as well for consistency */}
+                       <LogOut />
                        <span className="group-data-[collapsible=icon]:hidden">Login</span>
                      </a>
                    </SidebarMenuButton>
