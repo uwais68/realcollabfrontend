@@ -25,6 +25,11 @@ type ChatRoomId = string;
  */
 type MilestoneId = string;
 
+/**
+ * Represents a Timelog ID (string representation of ObjectId).
+ */
+type TimelogId = string;
+
 
 /**
  * Represents a Task based on the Mongoose schema.
@@ -196,6 +201,21 @@ export interface Milestone {
   updatedAt: string;
 }
 
+/**
+ * Represents a Timelog based on the Mongoose schema.
+ */
+export interface Timelog {
+  _id: TimelogId;
+  task: TaskId;
+  user: UserId;
+  startTime: string; // ISO string date
+  endTime: string; // ISO string date
+  duration: number; // Duration in minutes (or milliseconds, needs clarification from backend)
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 
 // --- API Interaction Functions ---
 
@@ -205,7 +225,7 @@ const AUTH_TOKEN_COOKIE_NAME = 'authToken'; // Consistent cookie name
 // Get the auth token from cookies (client-side)
 const getAuthToken = (): string | null => {
   if (typeof document === 'undefined') {
-      console.warn("Attempted to get auth token outside of client-side context.");
+      // console.warn("Attempted to get auth token outside of client-side context.");
       return null; // Not running in a browser
   }
   const cookies = document.cookie.split(';');
@@ -234,10 +254,29 @@ const getHeaders = (): HeadersInit => {
   return headers;
 };
 
+// Helper to handle API errors
+const handleApiError = async (response: Response, context: string): Promise<never> => {
+    const status = response.status;
+    let errorData = { message: `Failed to ${context} (${status})` };
+    try {
+        errorData = await response.json();
+    } catch (e) {
+        // Ignore JSON parsing error if response body is empty or not JSON
+    }
+
+    console.error(`API Error (${context}):`, status, errorData);
+
+    if (status === 401 || status === 403) {
+        throw new Error(`Unauthorized: Cannot ${context}. Please log in.`);
+    }
+
+    throw new Error(errorData.message || `Failed to ${context} (${status})`);
+};
+
 // --- Authentication API Calls ---
 
 /** Data needed for user registration. */
-export type RegisterData = Omit<User, '_id' | 'profilePicture' | 'otp' | 'otpExpires'> & { role?: 'User' | 'Admin' }; // Exclude generated/optional fields
+export type RegisterData = Omit<User, '_id' | 'profilePicture'> & { password?: string, role?: 'User' | 'Admin' }; // Exclude generated/optional fields
 
 /**
  * Registers a new user via the API.
@@ -254,16 +293,15 @@ export async function registerUser(userData: RegisterData): Promise<{ message: s
   });
 
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ message: 'Failed to register user' }));
-    console.error('API Error (Register):', response.status, errorData);
-    throw new Error(errorData.error || errorData.message || `Failed to register (${response.status})`);
+    return handleApiError(response, "register user");
   }
   return response.json();
 }
 
 
 /** Data needed for user login. */
-export type LoginData = Pick<User, 'email' | 'password'>;
+export type LoginData = Pick<User, 'email' > & { password?: string };
+
 
 /**
  * Logs in a user via the API.
@@ -280,10 +318,7 @@ export async function loginUser(credentials: LoginData): Promise<{ token: string
   });
 
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ message: 'Failed to log in' }));
-    console.error('API Error (Login):', response.status, errorData);
-    // Use 'error' field from backend response if available
-    throw new Error(errorData.error || errorData.message || `Login failed (${response.status})`);
+     return handleApiError(response, "log in");
   }
   return response.json();
 }
@@ -305,12 +340,7 @@ export async function getAllTasks(): Promise<Task[]> {
   });
 
   if (!response.ok) {
-     if (response.status === 401 || response.status === 403) {
-       throw new Error("Unauthorized: Please log in.");
-     }
-    const errorData = await response.json().catch(() => ({ message: 'Failed to fetch tasks' }));
-    console.error('API Error (Get Tasks):', response.status, errorData);
-    throw new Error(errorData.message || `Failed to fetch tasks (${response.status})`);
+     return handleApiError(response, "fetch tasks");
   }
 
   const data = await response.json();
@@ -346,12 +376,7 @@ export async function createTask(taskData: CreateTaskData): Promise<Task> {
   });
 
   if (!response.ok) {
-      if (response.status === 401 || response.status === 403) {
-         throw new Error("Unauthorized: Cannot create task.");
-       }
-     const errorData = await response.json().catch(() => ({ message: 'Failed to create task' }));
-     console.error('API Error (Create Task):', response.status, errorData);
-    throw new Error(errorData.message || `Failed to create task (${response.status})`);
+      return handleApiError(response, "create task");
   }
    // Backend returns the created task object directly.
   return response.json();
@@ -380,12 +405,7 @@ export async function updateTask(taskId: TaskId, taskData: UpdateTaskData): Prom
   });
 
   if (!response.ok) {
-      if (response.status === 401 || response.status === 403) {
-         throw new Error("Unauthorized: Cannot update task.");
-       }
-     const errorData = await response.json().catch(() => ({ message: 'Failed to update task' }));
-     console.error('API Error (Update Task):', response.status, errorData);
-    throw new Error(errorData.message || `Failed to update task (${response.status})`);
+      return handleApiError(response, `update task ${taskId}`);
   }
   // Backend returns the updated task object.
   return response.json();
@@ -406,12 +426,7 @@ export async function deleteTask(taskId: TaskId): Promise<{ message: string }> {
   });
 
   if (!response.ok) {
-      if (response.status === 401 || response.status === 403) {
-         throw new Error("Unauthorized: Cannot delete task.");
-       }
-     const errorData = await response.json().catch(() => ({ message: 'Failed to delete task' }));
-     console.error('API Error (Delete Task):', response.status, errorData);
-    throw new Error(errorData.message || `Failed to delete task (${response.status})`);
+     return handleApiError(response, `delete task ${taskId}`);
   }
   return response.json(); // Expecting { message: "Task deleted successfully" } or similar
 }
@@ -433,12 +448,7 @@ export async function getAllNotifications(): Promise<Notification[]> {
     });
 
    if (!response.ok) {
-     if (response.status === 401 || response.status === 403) {
-       throw new Error("Unauthorized: Please log in to view notifications.");
-     }
-     const errorData = await response.json().catch(() => ({ message: 'Failed to fetch notifications' }));
-     console.error('API Error (Get Notifications):', response.status, errorData);
-     throw new Error(errorData.message || `Failed to fetch notifications (${response.status})`);
+    return handleApiError(response, "fetch notifications");
    }
 
    const data = await response.json();
@@ -469,12 +479,7 @@ export async function getAllNotifications(): Promise<Notification[]> {
      });
 
      if (!response.ok) {
-         if (response.status === 401 || response.status === 403) {
-             throw new Error("Unauthorized: Cannot send message.");
-         }
-         const errorData = await response.json().catch(() => ({ message: 'Failed to send message' }));
-         console.error('API Error (Send Message):', response.status, errorData);
-         throw new Error(errorData.message || `Failed to send message (${response.status})`);
+        return handleApiError(response, `send message to room ${messageData.chatRoom}`);
      }
      const data = await response.json();
      // Backend returns { message: "...", newMessage: {...} }
@@ -496,12 +501,7 @@ export async function getAllMessages(chatRoomId: ChatRoomId): Promise<ChatMessag
    });
 
    if (!response.ok) {
-       if (response.status === 401 || response.status === 403) {
-           throw new Error("Unauthorized: Please log in to view messages.");
-       }
-       const errorData = await response.json().catch(() => ({ message: `Failed to fetch messages for room ${chatRoomId}` }));
-       console.error(`API Error (Get Messages for ${chatRoomId}):`, response.status, errorData);
-       throw new Error(errorData.message || `Failed to fetch messages (${response.status})`);
+        return handleApiError(response, `fetch messages for room ${chatRoomId}`);
    }
 
    const data = await response.json();
@@ -524,12 +524,7 @@ export async function getAllMessages(chatRoomId: ChatRoomId): Promise<ChatMessag
      });
 
      if (!response.ok) {
-         if (response.status === 401 || response.status === 403) {
-             throw new Error("Unauthorized: Cannot delete message.");
-         }
-         const errorData = await response.json().catch(() => ({ message: 'Failed to delete message' }));
-         console.error('API Error (Delete Message):', response.status, errorData);
-         throw new Error(errorData.message || `Failed to delete message (${response.status})`);
+        return handleApiError(response, `delete message ${messageId}`);
      }
      return response.json();
  }
@@ -551,12 +546,7 @@ export async function getAllMessages(chatRoomId: ChatRoomId): Promise<ChatMessag
      });
 
      if (!response.ok) {
-         if (response.status === 401 || response.status === 403) {
-             throw new Error("Unauthorized: Cannot update message status.");
-         }
-         const errorData = await response.json().catch(() => ({ message: 'Failed to update message status' }));
-         console.error('API Error (Update Status):', response.status, errorData);
-         throw new Error(errorData.message || `Failed to update status (${response.status})`);
+        return handleApiError(response, `update message ${messageId} status`);
      }
      return response.json();
  }
@@ -578,12 +568,7 @@ export async function getAllMessages(chatRoomId: ChatRoomId): Promise<ChatMessag
      });
 
      if (!response.ok) {
-         if (response.status === 401 || response.status === 403) {
-             throw new Error("Unauthorized: Cannot react to message.");
-         }
-         const errorData = await response.json().catch(() => ({ message: 'Failed to react to message' }));
-         console.error('API Error (React Message):', response.status, errorData);
-         throw new Error(errorData.message || `Failed to react (${response.status})`);
+        return handleApiError(response, `react to message ${messageId}`);
      }
      return response.json();
  }
@@ -607,12 +592,7 @@ export async function getAllMessages(chatRoomId: ChatRoomId): Promise<ChatMessag
      });
 
      if (!response.ok) {
-         if (response.status === 401 || response.status === 403) {
-             throw new Error("Unauthorized: Cannot reply to message.");
-         }
-         const errorData = await response.json().catch(() => ({ message: 'Failed to send reply' }));
-         console.error('API Error (Reply Message):', response.status, errorData);
-         throw new Error(errorData.message || `Failed to send reply (${response.status})`);
+        return handleApiError(response, `reply to message ${originalMessageId}`);
      }
      return response.json();
  }
@@ -635,17 +615,12 @@ export async function getAllMessages(chatRoomId: ChatRoomId): Promise<ChatMessag
      });
 
      if (!response.ok) {
-         if (response.status === 401 || response.status === 403) {
-             throw new Error("Unauthorized: Cannot fetch user details.");
-         }
          // Handle 404 specifically if needed
          if (response.status === 404) {
             console.warn(`User with ID ${userId} not found.`);
              return { _id: userId, firstName: 'Unknown', lastName: 'User', email: '' }; // Return placeholder
          }
-         const errorData = await response.json().catch(() => ({ message: `Failed to fetch user ${userId}` }));
-         console.error(`API Error (Get User ${userId}):`, response.status, errorData);
-         throw new Error(errorData.message || `Failed to fetch user (${response.status})`);
+         return handleApiError(response, `fetch user ${userId}`);
      }
 
      const data = await response.json();
@@ -669,12 +644,7 @@ export async function getAllMessages(chatRoomId: ChatRoomId): Promise<ChatMessag
      });
 
      if (!response.ok) {
-         if (response.status === 401 || response.status === 403) {
-             throw new Error("Unauthorized: Cannot fetch all users.");
-         }
-         const errorData = await response.json().catch(() => ({ message: 'Failed to fetch users' }));
-         console.error('API Error (Get All Users):', response.status, errorData);
-         throw new Error(errorData.message || `Failed to fetch users (${response.status})`);
+        return handleApiError(response, "fetch all users");
      }
 
      const data: User[] = await response.json();
@@ -704,12 +674,7 @@ export async function getAllMessages(chatRoomId: ChatRoomId): Promise<ChatMessag
      });
 
      if (!response.ok) {
-         if (response.status === 401 || response.status === 403) {
-             throw new Error("Unauthorized: Please log in.");
-         }
-         const errorData = await response.json().catch(() => ({ message: 'Failed to fetch current user' }));
-         console.error('API Error (Get Current User):', response.status, errorData);
-         throw new Error(errorData.message || `Failed to fetch current user info (${response.status})`);
+        return handleApiError(response, "fetch current user");
      }
 
      const data = await response.json();
@@ -742,13 +707,8 @@ export async function getAllMessages(chatRoomId: ChatRoomId): Promise<ChatMessag
     });
 
     if (!response.ok) {
-        if (response.status === 401 || response.status === 403) {
-            throw new Error("Unauthorized: Cannot create milestone.");
-        }
-        const errorData = await response.json().catch(() => ({ message: 'Failed to create milestone' }));
-        console.error('API Error (Create Milestone):', response.status, errorData);
-        throw new Error(errorData.message || `Failed to create milestone (${response.status})`);
-    } // Missing closing brace for the if block
+       return handleApiError(response, `create milestone for task ${milestoneData.task}`);
+    }
     return response.json(); // Backend returns { message: "...", newMilestone: {...} }
  }
 
@@ -768,12 +728,7 @@ export async function getAllMessages(chatRoomId: ChatRoomId): Promise<ChatMessag
     });
 
     if (!response.ok) {
-        if (response.status === 401 || response.status === 403) {
-            throw new Error("Unauthorized: Please log in to view milestones.");
-        }
-        const errorData = await response.json().catch(() => ({ message: `Failed to fetch milestones for task ${taskId}` }));
-        console.error(`API Error (Get Milestones for Task ${taskId}):`, response.status, errorData);
-        throw new Error(errorData.message || `Failed to fetch milestones (${response.status})`);
+        return handleApiError(response, `fetch milestones for task ${taskId}`);
     }
 
     const data = await response.json();
@@ -797,14 +752,129 @@ export async function getAllMessages(chatRoomId: ChatRoomId): Promise<ChatMessag
     });
 
     if (!response.ok) {
-        if (response.status === 401 || response.status === 403) {
-            throw new Error("Unauthorized: Cannot mark milestone as achieved.");
-        }
-        const errorData = await response.json().catch(() => ({ message: 'Failed to mark milestone as achieved' }));
-        console.error('API Error (Mark Milestone Achieved):', response.status, errorData);
-        throw new Error(errorData.message || `Failed to mark milestone as achieved (${response.status})`);
+       return handleApiError(response, `mark milestone ${milestoneId} achieved`);
     }
     return response.json(); // Backend returns { message: "...", milestone: {...} }
  }
 
-    
+
+ // --- Timelog API Calls ---
+
+/**
+ * Type for creating a new timelog. Excludes fields generated by the backend.
+ * Duration might be calculated on the backend or sent from the client.
+ * Assuming duration is calculated client-side or passed for simplicity here.
+ */
+ export type CreateTimelogData = Pick<Timelog, 'task' | 'user' | 'startTime' | 'endTime' | 'duration' | 'notes'>;
+
+/**
+ * Creates a new timelog for a task via the API.
+ * Requires authentication.
+ * @param timelogData The data for the new timelog.
+ * @returns A promise that resolves to the created Timelog object.
+ * @throws Throws an error if creation fails or if not authenticated.
+ */
+ export async function createTimelog(timelogData: CreateTimelogData): Promise<{ message: string; newTimelog: Timelog }> {
+    console.log('Creating timelog for task:', timelogData.task);
+    const response = await fetch(`${API_BASE_URL}/timelog/create`, { // Assuming '/api/timelog/create' endpoint
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(timelogData),
+    });
+
+    if (!response.ok) {
+        return handleApiError(response, `create timelog for task ${timelogData.task}`);
+    }
+    return response.json(); // Backend likely returns { message: "...", newTimelog: {...} }
+ }
+
+ /**
+  * Retrieves all timelogs for a specific task via the API.
+  * Requires authentication.
+  * @param taskId The ID of the task whose timelogs are to be fetched.
+  * @returns A promise that resolves to an array of Timelog objects.
+  * @throws Throws an error if fetching fails or if not authenticated.
+  */
+ export async function getTimelogsForTask(taskId: TaskId): Promise<Timelog[]> {
+    console.log(`Fetching timelogs for task: ${taskId}...`);
+    const response = await fetch(`${API_BASE_URL}/timelog/task/${taskId}`, { // Assuming '/api/timelog/task/:taskId' endpoint
+        method: 'GET',
+        headers: getHeaders(),
+    });
+
+    if (!response.ok) {
+        return handleApiError(response, `fetch timelogs for task ${taskId}`);
+    }
+
+    const data = await response.json();
+     // Backend likely returns { timelogs: [...] } or just the array
+     const timelogs = Array.isArray(data) ? data : (data.timelogs || []);
+    return timelogs as Timelog[];
+ }
+
+ /**
+  * Retrieves all timelogs for a specific user via the API.
+  * Requires authentication.
+  * @param userId The ID of the user whose timelogs are to be fetched.
+  * @returns A promise that resolves to an array of Timelog objects.
+  * @throws Throws an error if fetching fails or if not authenticated.
+  */
+ export async function getTimelogsForUser(userId: UserId): Promise<Timelog[]> {
+    console.log(`Fetching timelogs for user: ${userId}...`);
+    const response = await fetch(`${API_BASE_URL}/timelog/user/${userId}`, { // Assuming '/api/timelog/user/:userId' endpoint
+        method: 'GET',
+        headers: getHeaders(),
+    });
+
+    if (!response.ok) {
+        return handleApiError(response, `fetch timelogs for user ${userId}`);
+    }
+
+    const data = await response.json();
+    // Backend likely returns { timelogs: [...] } or just the array
+    const timelogs = Array.isArray(data) ? data : (data.timelogs || []);
+    return timelogs as Timelog[];
+ }
+
+ /**
+  * Updates an existing timelog via the API.
+  * Requires authentication.
+  * @param timelogId The ID of the timelog to update.
+  * @param timelogData The data to update the timelog with.
+  * @returns A promise that resolves to the updated Timelog object.
+  * @throws Throws an error if update fails or if not authenticated.
+  */
+ export type UpdateTimelogData = Partial<Omit<Timelog, '_id' | 'task' | 'user' | 'createdAt' | 'updatedAt'>>;
+ export async function updateTimelog(timelogId: TimelogId, timelogData: UpdateTimelogData): Promise<{ message: string; updatedTimelog: Timelog }> {
+    console.log(`Updating timelog ${timelogId}:`, timelogData);
+    const response = await fetch(`${API_BASE_URL}/timelog/update/${timelogId}`, { // Assuming '/api/timelog/update/:timelogId' endpoint
+        method: 'PUT',
+        headers: getHeaders(),
+        body: JSON.stringify(timelogData),
+    });
+
+    if (!response.ok) {
+        return handleApiError(response, `update timelog ${timelogId}`);
+    }
+    return response.json(); // Backend likely returns { message: "...", updatedTimelog: {...} }
+ }
+
+ /**
+  * Deletes a timelog via the API.
+  * Requires authentication.
+  * @param timelogId The ID of the timelog to delete.
+  * @returns A promise that resolves when deletion is successful.
+  * @throws Throws an error if deletion fails or if not authenticated.
+  */
+ export async function deleteTimelog(timelogId: TimelogId): Promise<{ message: string }> {
+    console.log(`Deleting timelog ${timelogId}`);
+    const response = await fetch(`${API_BASE_URL}/timelog/delete/${timelogId}`, { // Assuming '/api/timelog/delete/:timelogId' endpoint
+        method: 'DELETE',
+        headers: getHeaders(),
+    });
+
+    if (!response.ok) {
+        return handleApiError(response, `delete timelog ${timelogId}`);
+    }
+    return response.json(); // Expecting { message: "Timelog deleted successfully" } or similar
+ }

@@ -3,7 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Home, ListChecks, MessageSquare, Bell, LogOut, UserCircle } from 'lucide-react'; // Removed Target icon
+import { Home, ListChecks, MessageSquare, Bell, LogOut, UserCircle, Clock } from 'lucide-react'; // Added Clock icon
 
 import {
   Sidebar,
@@ -89,6 +89,20 @@ export function AppSidebar() {
             </Link>
           </SidebarMenuItem>
           {/* Milestones link removed */}
+           <SidebarMenuItem>
+             <Link href="/timelogs" passHref legacyBehavior>
+               <SidebarMenuButton
+                 asChild
+                 isActive={isActive('/timelogs')}
+                 tooltip="Timelogs"
+               >
+                 <a>
+                   <Clock />
+                   <span>Timelogs</span>
+                 </a>
+               </SidebarMenuButton>
+             </Link>
+           </SidebarMenuItem>
           <SidebarMenuItem>
             <Link href="/chat" passHref legacyBehavior>
               <SidebarMenuButton
