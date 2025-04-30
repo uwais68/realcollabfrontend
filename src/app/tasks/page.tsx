@@ -1,13 +1,13 @@
 
-import { Dashboard } from '@/components/dashboard';
+import { TaskManagement } from '@/components/task-management';
 import { AppSidebar } from '@/components/app-sidebar';
 
-export default function Home() {
+export default function TasksPage() {
   return (
     <div className="flex">
       <AppSidebar />
       <main className="flex-1">
-        <Dashboard />
+        <TaskManagement />
       </main>
     </div>
   );
