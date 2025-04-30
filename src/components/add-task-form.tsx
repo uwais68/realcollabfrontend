@@ -33,11 +33,8 @@ import {
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
 import { useToast } from "@/hooks/use-toast";
-import { createTask, type CreateTaskData } from '@/services/realcollab'; // Import API function and type
-
-// TODO: Fetch users from API (e.g., GET /api/user/all)
-// Replace MOCK_USERS with fetched data
-const MOCK_USERS = [{ id: 'user1', name: 'User One' }, { id: 'user2', name: 'User Two' }, { id: 'admin', name: 'Admin User'}]; // Example user structure
+import { createTask, type CreateTaskData, getAllUsers } from '@/services/realcollab'; // Import API function and type
+import type { User } from '@/context/AuthContext'; // Import User type if needed
 
 const TASK_STATUSES = ['Pending', 'In Progress', 'Completed'] as const; // Match backend schema
 
@@ -49,8 +46,7 @@ const formSchema = z.object({
   description: z.string().optional(),
   status: z.enum(TASK_STATUSES),
   dueDate: z.date().optional(),
-  assignedTo: z.string().optional(), // Make optional if not required on creation
-  // project: z.string().min(1, { message: 'Please select a project.'}), // Removed as per Task schema
+  assignedTo: z.string().optional().nullable(), // Allow null for unassigned
 });
 
 // Infer the type for the form based on the schema
@@ -59,6 +55,31 @@ type TaskFormValues = z.infer<typeof formSchema>;
 export function AddTaskForm({ onTaskAdded }: { onTaskAdded?: () => void }) {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [users, setUsers] = React.useState<Partial<User>[]>([]);
+  const [loadingUsers, setLoadingUsers] = React.useState(true);
+
+  // Fetch users on component mount
+  React.useEffect(() => {
+    const fetchUsers = async () => {
+      setLoadingUsers(true);
+      try {
+        const fetchedUsers = await getAllUsers();
+        setUsers(fetchedUsers);
+      } catch (error) {
+        console.error("Failed to fetch users:", error);
+        toast({
+          title: "Error Loading Users",
+          description: "Could not load user list for assignment.",
+          variant: "destructive",
+        });
+        // Leave users array empty or handle error state appropriately
+      } finally {
+        setLoadingUsers(false);
+      }
+    };
+    fetchUsers();
+  }, [toast]);
+
 
   const form = useForm<TaskFormValues>({
     resolver: zodResolver(formSchema),
@@ -66,9 +87,8 @@ export function AddTaskForm({ onTaskAdded }: { onTaskAdded?: () => void }) {
       title: '',
       description: '',
       status: TASK_STATUSES[0], // Default to 'Pending'
-      assignedTo: undefined, // Set to undefined for optional field
+      assignedTo: null, // Default to null for unassigned
       dueDate: undefined,
-      // project: '', // Removed
     },
   });
 
@@ -79,7 +99,8 @@ export function AddTaskForm({ onTaskAdded }: { onTaskAdded?: () => void }) {
       const apiData: CreateTaskData = {
         ...values,
         dueDate: values.dueDate ? values.dueDate.toISOString() : undefined,
-        // assignedTo is already a string (UserId) or undefined
+        // assignedTo is already a string (UserId) or null
+        assignedTo: values.assignedTo || null, // Ensure null if empty string
       };
 
       console.log('Submitting task data to API:', apiData);
@@ -199,27 +220,31 @@ export function AddTaskForm({ onTaskAdded }: { onTaskAdded?: () => void }) {
             )}
           />
         </div>
-         <div className="grid md:grid-cols-2 gap-6">
+         <div className="grid md:grid-cols-1 gap-6"> {/* Single column for assignee */}
           <FormField
             control={form.control}
             name="assignedTo"
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Assign To (Optional)</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isSubmitting}>
+                <Select
+                   onValueChange={(value) => field.onChange(value === "" ? null : value)}
+                   value={field.value ?? ""} // Use empty string for 'Unassigned'
+                   disabled={isSubmitting || loadingUsers}
+                 >
                   <FormControl>
                     <SelectTrigger>
-                      <SelectValue placeholder="Select user" />
+                      <SelectValue placeholder={loadingUsers ? "Loading users..." : "Select user"} />
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                     {/* TODO: Fetch actual users from API */}
                      <SelectItem value="">
                         <span className="text-muted-foreground">Unassigned</span>
                     </SelectItem>
-                    {MOCK_USERS.map((user) => (
-                      <SelectItem key={user.id} value={user.id}>
-                        {user.name}
+                    {!loadingUsers && users.map((user) => (
+                      <SelectItem key={user._id} value={user._id!}>
+                         {/* Display user's full name or email */}
+                         {user.firstName || user.lastName ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : user.email}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -228,14 +253,8 @@ export function AddTaskForm({ onTaskAdded }: { onTaskAdded?: () => void }) {
               </FormItem>
             )}
           />
-           {/* Project field removed based on schema */}
-          {/* <FormField
-            control={form.control}
-            name="project"
-            render={({ field }) => (...)}
-          /> */}
         </div>
-        <Button type="submit" disabled={isSubmitting}>
+        <Button type="submit" disabled={isSubmitting || loadingUsers}>
           {isSubmitting ? 'Adding Task...' : 'Add Task'}
         </Button>
       </form>

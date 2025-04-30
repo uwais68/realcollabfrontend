@@ -33,10 +33,8 @@ import {
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
 import { useToast } from "@/hooks/use-toast";
-import { updateTask, type Task, type UpdateTaskData } from '@/services/realcollab'; // Import API function and types
-
-// TODO: Fetch users from API (e.g., GET /api/user/all) - reuse from AddTaskForm if possible
-const MOCK_USERS = [{ id: 'user1', name: 'User One' }, { id: 'user2', name: 'User Two' }, { id: 'admin', name: 'Admin User'}]; // Example user structure
+import { updateTask, type Task, type UpdateTaskData, getAllUsers } from '@/services/realcollab'; // Import API function and types
+import type { User } from '@/context/AuthContext'; // Import User type if needed
 
 const TASK_STATUSES = ['Pending', 'In Progress', 'Completed'] as const; // Match backend schema
 
@@ -63,6 +61,30 @@ interface EditTaskFormProps {
 export function EditTaskForm({ task, onTaskUpdated, onCancel }: EditTaskFormProps) {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [users, setUsers] = React.useState<Partial<User>[]>([]);
+  const [loadingUsers, setLoadingUsers] = React.useState(true);
+
+   // Fetch users on component mount
+   React.useEffect(() => {
+     const fetchUsers = async () => {
+       setLoadingUsers(true);
+       try {
+         const fetchedUsers = await getAllUsers();
+         setUsers(fetchedUsers);
+       } catch (error) {
+         console.error("Failed to fetch users:", error);
+         toast({
+           title: "Error Loading Users",
+           description: "Could not load user list for assignment.",
+           variant: "destructive",
+         });
+       } finally {
+         setLoadingUsers(false);
+       }
+     };
+     fetchUsers();
+   }, [toast]);
+
 
   const form = useForm<TaskFormValues>({
     resolver: zodResolver(formSchema),
@@ -70,7 +92,7 @@ export function EditTaskForm({ task, onTaskUpdated, onCancel }: EditTaskFormProp
       title: task.title || '',
       description: task.description || '',
       status: task.status || TASK_STATUSES[0],
-      // Ensure assignedTo is handled correctly (might be undefined in Task, need string or null for form)
+      // Ensure assignedTo is handled correctly (might be undefined/null in Task)
       assignedTo: task.assignedTo || null,
       // Parse ISO string date back to Date object for the calendar
       dueDate: task.dueDate ? parseISO(task.dueDate) : null,
@@ -91,45 +113,52 @@ export function EditTaskForm({ task, onTaskUpdated, onCancel }: EditTaskFormProp
         assignedTo: values.assignedTo || undefined,
       };
 
-      // Filter out unchanged values (optional, depends on API behavior)
+      // Filter out unchanged values to send only necessary updates
       const changedData: UpdateTaskData = {};
-      for (const key in apiData) {
-          const formKey = key as keyof UpdateTaskData;
-          // Need careful comparison, especially for dates/objects if they existed
-          // Simple comparison for this example:
-          if (apiData[formKey] !== (task as any)[formKey]) {
-               // Special handling for dueDate as it's converted
-               if(formKey === 'dueDate') {
-                   const originalDueDateStr = task.dueDate ? parseISO(task.dueDate).toISOString() : undefined;
-                   if (apiData.dueDate !== originalDueDateStr) {
-                       (changedData as any)[formKey] = apiData[formKey];
-                   }
-               } else if(formKey === 'assignedTo') {
-                   const originalAssignedTo = task.assignedTo || undefined;
-                    if (apiData.assignedTo !== originalAssignedTo) {
-                       (changedData as any)[formKey] = apiData[formKey];
-                    }
-               }
-               else {
-                 (changedData as any)[formKey] = apiData[formKey];
-               }
-          }
-      }
+      let hasChanges = false;
 
-       // If you want to always send all fields regardless of change:
-       // const dataToSend = apiData;
-       // If you want to send only changed fields:
-       const dataToSend = changedData;
+      // Compare title
+        if (apiData.title !== task.title) {
+            changedData.title = apiData.title;
+            hasChanges = true;
+        }
 
-       if (Object.keys(dataToSend).length === 0) {
+        // Compare description (handle undefined/null)
+        if ((apiData.description ?? '') !== (task.description ?? '')) {
+            changedData.description = apiData.description;
+            hasChanges = true;
+        }
+
+        // Compare status
+        if (apiData.status !== task.status) {
+            changedData.status = apiData.status;
+            hasChanges = true;
+        }
+
+       // Compare dueDate (handle Date vs ISO string vs null/undefined)
+       const originalDueDateISO = task.dueDate ? parseISO(task.dueDate).toISOString() : undefined;
+       if (apiData.dueDate !== originalDueDateISO) {
+           changedData.dueDate = apiData.dueDate;
+           hasChanges = true;
+       }
+
+       // Compare assignedTo (handle null/undefined)
+       const originalAssignedTo = task.assignedTo || undefined;
+       if (apiData.assignedTo !== originalAssignedTo) {
+           changedData.assignedTo = apiData.assignedTo;
+           hasChanges = true;
+       }
+
+
+       if (!hasChanges) {
            toast({ title: "No Changes Detected", description: "No fields were modified."});
            setIsSubmitting(false);
-           onCancel(); // Or just close without update?
+           onCancel(); // Close the form as no changes were made
            return;
        }
 
-      console.log(`Submitting updated task data for ${task._id}:`, dataToSend);
-      await updateTask(task._id, dataToSend);
+      console.log(`Submitting updated task data for ${task._id}:`, changedData);
+      await updateTask(task._id, changedData);
 
       // No need for toast here, parent component handles it via onTaskUpdated
       onTaskUpdated(); // Notify parent component
@@ -142,9 +171,9 @@ export function EditTaskForm({ task, onTaskUpdated, onCancel }: EditTaskFormProp
         description: errorMessage,
         variant: "destructive",
       });
-    } finally {
-      setIsSubmitting(false);
+       setIsSubmitting(false); // Re-enable buttons on error
     }
+    // Don't set isSubmitting=false on success, parent closes the dialog
   }
 
   return (
@@ -170,7 +199,7 @@ export function EditTaskForm({ task, onTaskUpdated, onCancel }: EditTaskFormProp
             <FormItem>
               <FormLabel>Description</FormLabel>
               <FormControl>
-                <Textarea placeholder="Enter task description (optional)" {...field} disabled={isSubmitting}/>
+                <Textarea placeholder="Enter task description (optional)" {...field} value={field.value ?? ''} disabled={isSubmitting}/>
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -247,25 +276,23 @@ export function EditTaskForm({ task, onTaskUpdated, onCancel }: EditTaskFormProp
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Assign To</FormLabel>
-                {/* Handle null value for Select */}
                  <Select
                     onValueChange={(value) => field.onChange(value === "" ? null : value)}
                     value={field.value ?? ""} // Use empty string for 'Unassigned' option value
-                    disabled={isSubmitting}>
+                    disabled={isSubmitting || loadingUsers}>
                   <FormControl>
                     <SelectTrigger>
-                       <SelectValue placeholder="Select user" />
+                       <SelectValue placeholder={loadingUsers ? "Loading users..." : "Select user"} />
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
                      <SelectItem value="">
                         <span className="text-muted-foreground">Unassigned</span>
                     </SelectItem>
-                     {/* TODO: Fetch actual users from API */}
-                    {MOCK_USERS.map((user) => (
-                      <SelectItem key={user.id} value={user.id}>
-                        {user.name}
-                      </SelectItem>
+                    {!loadingUsers && users.map((user) => (
+                        <SelectItem key={user._id} value={user._id!}>
+                          {user.firstName || user.lastName ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : user.email}
+                        </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -278,7 +305,7 @@ export function EditTaskForm({ task, onTaskUpdated, onCancel }: EditTaskFormProp
             <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting}>
                 Cancel
             </Button>
-            <Button type="submit" disabled={isSubmitting}>
+            <Button type="submit" disabled={isSubmitting || loadingUsers}>
             {isSubmitting ? 'Saving...' : 'Save Changes'}
             </Button>
          </div>

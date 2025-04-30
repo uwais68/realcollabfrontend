@@ -1,9 +1,10 @@
 import type {Metadata} from 'next';
-import {Geist, Geist_Mono} from 'next/font/google';
+import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { Toaster } from '@/components/ui/toaster';
 import { SocketProvider } from '@/context/SocketContext';
+import { AuthProvider } from '@/context/AuthContext'; // Import AuthProvider
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -28,12 +29,14 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <SocketProvider>
-           <SidebarProvider>
-             {children}
-             <Toaster />
-           </SidebarProvider>
-        </SocketProvider>
+        <AuthProvider> {/* Wrap with AuthProvider */}
+          <SocketProvider>
+             <SidebarProvider>
+               {children}
+               <Toaster />
+             </SidebarProvider>
+          </SocketProvider>
+        </AuthProvider>
       </body>
     </html>
   );
