@@ -4,7 +4,7 @@ import * as React from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { CalendarIcon } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -33,71 +33,112 @@ import {
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
 import { useToast } from "@/hooks/use-toast";
-import { createTask, type CreateTaskData } from '@/services/realcollab'; // Import API function and type
+import { updateTask, type Task, type UpdateTaskData } from '@/services/realcollab'; // Import API function and types
 
-// TODO: Fetch users from API (e.g., GET /api/user/all)
-// Replace MOCK_USERS with fetched data
+// TODO: Fetch users from API (e.g., GET /api/user/all) - reuse from AddTaskForm if possible
 const MOCK_USERS = [{ id: 'user1', name: 'User One' }, { id: 'user2', name: 'User Two' }, { id: 'admin', name: 'Admin User'}]; // Example user structure
 
 const TASK_STATUSES = ['Pending', 'In Progress', 'Completed'] as const; // Match backend schema
 
-// Form schema based on CreateTaskData (excluding backend-generated fields)
+// Form schema for editing (similar to creation, but using UpdateTaskData structure)
 const formSchema = z.object({
   title: z.string().min(2, {
     message: 'Title must be at least 2 characters.',
   }),
   description: z.string().optional(),
   status: z.enum(TASK_STATUSES),
-  dueDate: z.date().optional(),
-  assignedTo: z.string().optional(), // Make optional if not required on creation
-  // project: z.string().min(1, { message: 'Please select a project.'}), // Removed as per Task schema
+  dueDate: z.date().optional().nullable(), // Allow null for clearing the date
+  assignedTo: z.string().optional().nullable(), // Allow null for unassigning
 });
 
 // Infer the type for the form based on the schema
 type TaskFormValues = z.infer<typeof formSchema>;
 
-export function AddTaskForm({ onTaskAdded }: { onTaskAdded?: () => void }) {
+interface EditTaskFormProps {
+  task: Task;
+  onTaskUpdated: () => void;
+  onCancel: () => void;
+}
+
+export function EditTaskForm({ task, onTaskUpdated, onCancel }: EditTaskFormProps) {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   const form = useForm<TaskFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      title: '',
-      description: '',
-      status: TASK_STATUSES[0], // Default to 'Pending'
-      assignedTo: undefined, // Set to undefined for optional field
-      dueDate: undefined,
-      // project: '', // Removed
+      title: task.title || '',
+      description: task.description || '',
+      status: task.status || TASK_STATUSES[0],
+      // Ensure assignedTo is handled correctly (might be undefined in Task, need string or null for form)
+      assignedTo: task.assignedTo || null,
+      // Parse ISO string date back to Date object for the calendar
+      dueDate: task.dueDate ? parseISO(task.dueDate) : null,
     },
   });
 
   async function onSubmit(values: TaskFormValues) {
     setIsSubmitting(true);
     try {
-      // Prepare data for API call, potentially converting date
-      const apiData: CreateTaskData = {
-        ...values,
-        dueDate: values.dueDate ? values.dueDate.toISOString() : undefined,
-        // assignedTo is already a string (UserId) or undefined
+      // Prepare data for API call
+      const apiData: UpdateTaskData = {
+        title: values.title,
+        description: values.description,
+        status: values.status,
+        // Convert Date back to ISO string if present, handle null for clearing
+        dueDate: values.dueDate ? values.dueDate.toISOString() : undefined, // Send undefined to backend if null/cleared
+        // assignedTo should be string or undefined for the API
+        assignedTo: values.assignedTo || undefined,
       };
 
-      console.log('Submitting task data to API:', apiData);
-      const newTask = await createTask(apiData);
-      console.log('Task created successfully:', newTask);
+      // Filter out unchanged values (optional, depends on API behavior)
+      const changedData: UpdateTaskData = {};
+      for (const key in apiData) {
+          const formKey = key as keyof UpdateTaskData;
+          // Need careful comparison, especially for dates/objects if they existed
+          // Simple comparison for this example:
+          if (apiData[formKey] !== (task as any)[formKey]) {
+               // Special handling for dueDate as it's converted
+               if(formKey === 'dueDate') {
+                   const originalDueDateStr = task.dueDate ? parseISO(task.dueDate).toISOString() : undefined;
+                   if (apiData.dueDate !== originalDueDateStr) {
+                       (changedData as any)[formKey] = apiData[formKey];
+                   }
+               } else if(formKey === 'assignedTo') {
+                   const originalAssignedTo = task.assignedTo || undefined;
+                    if (apiData.assignedTo !== originalAssignedTo) {
+                       (changedData as any)[formKey] = apiData[formKey];
+                    }
+               }
+               else {
+                 (changedData as any)[formKey] = apiData[formKey];
+               }
+          }
+      }
 
-      toast({
-        title: "Task Created",
-        description: `Task "${newTask.title}" has been added successfully.`,
-      });
-      form.reset(); // Reset form after successful submission
-      onTaskAdded?.(); // Callback to notify parent component (e.g., refresh task list)
+       // If you want to always send all fields regardless of change:
+       // const dataToSend = apiData;
+       // If you want to send only changed fields:
+       const dataToSend = changedData;
+
+       if (Object.keys(dataToSend).length === 0) {
+           toast({ title: "No Changes Detected", description: "No fields were modified."});
+           setIsSubmitting(false);
+           onCancel(); // Or just close without update?
+           return;
+       }
+
+      console.log(`Submitting updated task data for ${task._id}:`, dataToSend);
+      await updateTask(task._id, dataToSend);
+
+      // No need for toast here, parent component handles it via onTaskUpdated
+      onTaskUpdated(); // Notify parent component
 
     } catch (error) {
-      console.error('Failed to create task:', error);
+      console.error('Failed to update task:', error);
       const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred.';
       toast({
-        title: "Error Creating Task",
+        title: "Error Updating Task",
         description: errorMessage,
         variant: "destructive",
       });
@@ -108,7 +149,7 @@ export function AddTaskForm({ onTaskAdded }: { onTaskAdded?: () => void }) {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
         <FormField
           control={form.control}
           name="title"
@@ -135,14 +176,14 @@ export function AddTaskForm({ onTaskAdded }: { onTaskAdded?: () => void }) {
             </FormItem>
           )}
         />
-        <div className="grid md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-2 gap-4">
           <FormField
             control={form.control}
             name="status"
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Status</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isSubmitting}>
+                <Select onValueChange={field.onChange} value={field.value} disabled={isSubmitting}>
                   <FormControl>
                     <SelectTrigger>
                       <SelectValue placeholder="Select status" />
@@ -165,7 +206,7 @@ export function AddTaskForm({ onTaskAdded }: { onTaskAdded?: () => void }) {
             name="dueDate"
             render={({ field }) => (
               <FormItem className="flex flex-col pt-2">
-                <FormLabel>Due Date (Optional)</FormLabel>
+                <FormLabel>Due Date</FormLabel>
                  <Popover>
                     <PopoverTrigger asChild>
                     <FormControl>
@@ -178,15 +219,15 @@ export function AddTaskForm({ onTaskAdded }: { onTaskAdded?: () => void }) {
                          disabled={isSubmitting}
                         >
                         <CalendarIcon className="mr-2 h-4 w-4" />
-                        {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
+                         {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
                         </Button>
                     </FormControl>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0" align="start">
                     <Calendar
                         mode="single"
-                        selected={field.value}
-                        onSelect={field.onChange}
+                         selected={field.value ?? undefined} // Pass undefined if null
+                         onSelect={(date) => field.onChange(date ?? null)} // Send null back if cleared
                         disabled={(date) =>
                           date < new Date(new Date().setHours(0, 0, 0, 0)) || isSubmitting // Disable past dates and during submit
                         }
@@ -199,24 +240,28 @@ export function AddTaskForm({ onTaskAdded }: { onTaskAdded?: () => void }) {
             )}
           />
         </div>
-         <div className="grid md:grid-cols-2 gap-6">
+         <div className="grid grid-cols-1 gap-4"> {/* Only Assignee here */}
           <FormField
             control={form.control}
             name="assignedTo"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Assign To (Optional)</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isSubmitting}>
+                <FormLabel>Assign To</FormLabel>
+                {/* Handle null value for Select */}
+                 <Select
+                    onValueChange={(value) => field.onChange(value === "" ? null : value)}
+                    value={field.value ?? ""} // Use empty string for 'Unassigned' option value
+                    disabled={isSubmitting}>
                   <FormControl>
                     <SelectTrigger>
-                      <SelectValue placeholder="Select user" />
+                       <SelectValue placeholder="Select user" />
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                     {/* TODO: Fetch actual users from API */}
                      <SelectItem value="">
                         <span className="text-muted-foreground">Unassigned</span>
                     </SelectItem>
+                     {/* TODO: Fetch actual users from API */}
                     {MOCK_USERS.map((user) => (
                       <SelectItem key={user.id} value={user.id}>
                         {user.name}
@@ -228,16 +273,15 @@ export function AddTaskForm({ onTaskAdded }: { onTaskAdded?: () => void }) {
               </FormItem>
             )}
           />
-           {/* Project field removed based on schema */}
-          {/* <FormField
-            control={form.control}
-            name="project"
-            render={({ field }) => (...)}
-          /> */}
         </div>
-        <Button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? 'Adding Task...' : 'Add Task'}
-        </Button>
+         <div className="flex justify-end space-x-2 pt-4">
+            <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting}>
+                Cancel
+            </Button>
+            <Button type="submit" disabled={isSubmitting}>
+            {isSubmitting ? 'Saving...' : 'Save Changes'}
+            </Button>
+         </div>
       </form>
     </Form>
   );

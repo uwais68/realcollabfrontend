@@ -1,11 +1,21 @@
 /**
- * Represents a task.
+ * Represents a User ID (string representation of ObjectId).
+ */
+type UserId = string;
+
+/**
+ * Represents a Task ID (string representation of ObjectId).
+ */
+type TaskId = string;
+
+/**
+ * Represents a Task based on the Mongoose schema.
  */
 export interface Task {
   /**
    * The ID of the task.
    */
-  _id: string;
+  _id: TaskId;
   /**
    * The title of the task.
    */
@@ -17,19 +27,27 @@ export interface Task {
   /**
    * The status of the task.
    */
-  status: 'Open' | 'In Progress' | 'Review' | 'Completed'; // Use specific statuses
+  status: 'Pending' | 'In Progress' | 'Completed'; // Updated statuses
+  /**
+   * The ID of the assigned user.
+   */
+  assignedTo?: UserId; // Optional assigned user ID
+   /**
+   * The ID of the user who created the task.
+   */
+  createdBy: UserId; // Required creator user ID
   /**
    * The due date of the task (ISO string format).
    */
   dueDate?: string; // Optional due date
   /**
-   * The ID of the assigned user.
+   * Timestamp when the task was created.
    */
-  assignedTo: string; // Assuming this is a user ID
+  createdAt: string;
   /**
-   * The ID of the project.
+   * Timestamp when the task was last updated.
    */
-  project: string; // Assuming this is a project ID
+  updatedAt: string;
 }
 
 /**
@@ -43,7 +61,7 @@ export interface ChatMessage {
   /**
    * The ID of the sender.
    */
-  sender: string; // Assuming this is a user ID
+  sender: UserId; // Assuming this is a user ID
   /**
    * The content of the message.
    */
@@ -67,7 +85,7 @@ export interface Notification {
   /**
    * The user ID the notification is for.
    */
-  user: string; // Assuming this is a user ID
+  user: UserId; // Assuming this is a user ID
   /**
    * The message of the notification.
    */
@@ -90,67 +108,138 @@ export interface Notification {
    read?: boolean; // Optional read status
 }
 
-// --- Mock Data Functions ---
-// NOTE: These are placeholders. Replace with actual API calls.
-// Consider creating a dedicated api.ts or similar for actual fetch logic.
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api'; // Example API URL
+// --- API Interaction Functions ---
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api';
+
+// Placeholder for getting the auth token (replace with your actual auth logic)
+const getAuthToken = (): string | null => {
+  // Example: retrieve token from local storage
+  if (typeof window !== 'undefined') {
+     return localStorage.getItem('authToken');
+  }
+  return null;
+  // return 'your_static_jwt_token_for_testing'; // Or return a static token for testing
+};
+
+const getHeaders = (): HeadersInit => {
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+  };
+  const token = getAuthToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+};
 
 /**
- * Asynchronously retrieves all tasks.
- * MOCK IMPLEMENTATION.
+ * Asynchronously retrieves all tasks from the API.
  * @returns A promise that resolves to an array of Task objects.
+ * @throws Throws an error if the fetch operation fails.
  */
 export async function getAllTasks(): Promise<Task[]> {
-   console.log('Mock fetching tasks...');
-  // Simulate API call delay
-  await new Promise(resolve => setTimeout(resolve, 500));
+  console.log('Fetching tasks from API...');
+  const response = await fetch(`${API_BASE_URL}/task/all`, {
+     method: 'GET',
+     headers: getHeaders(),
+  });
 
-  // TODO: Replace with actual fetch call:
-  // const response = await fetch(`${API_BASE_URL}/task`);
-  // if (!response.ok) {
-  //   throw new Error('Failed to fetch tasks');
-  // }
-  // const data = await response.json();
-  // return data.tasks; // Assuming the API returns { tasks: [...] }
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ message: 'Failed to fetch tasks' }));
+    console.error('API Error:', response.status, errorData);
+    throw new Error(errorData.message || `Failed to fetch tasks (${response.status})`);
+  }
 
-  return [
-    {
-      _id: 'task_1',
-      title: 'Implement User Authentication Flow',
-      description: 'Set up login, registration, and password reset using JWT.',
-      status: 'In Progress',
-      dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(), // Due in 3 days
-      assignedTo: 'user1',
-      project: 'project1',
-    },
-    {
-      _id: 'task_2',
-      title: 'Design Database Schema for Chat',
-      description: 'Define models for Chat Rooms and Messages.',
-      status: 'Open',
-      assignedTo: 'user2',
-      project: 'project1',
-    },
-     {
-      _id: 'task_3',
-      title: 'Deploy Backend to Staging',
-      status: 'Completed',
-      dueDate: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(), // Due 2 days ago
-      assignedTo: 'admin',
-      project: 'internal',
-    },
-    {
-      _id: 'task_4',
-      title: 'Fix Notification Badge Count Bug',
-      description: 'Badge count not updating in real-time.',
-      status: 'Review',
-      assignedTo: 'user1',
-      project: 'internal',
-       dueDate: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString(), // Due tomorrow
-    },
-  ];
+  const data = await response.json();
+  // The API seems to return the array directly based on the route handler logic provided
+  return data as Task[];
 }
+
+/**
+ * Type for creating a new task. Excludes fields generated by the backend.
+ */
+export type CreateTaskData = Omit<Task, '_id' | 'createdBy' | 'createdAt' | 'updatedAt'> & {
+  // createdBy will be added by the backend based on the auth token
+  // Make assignedTo optional if it's not always required at creation
+   assignedTo?: UserId;
+};
+
+/**
+ * Creates a new task via the API.
+ * @param taskData The data for the new task.
+ * @returns A promise that resolves to the created Task object.
+ * @throws Throws an error if the creation fails.
+ */
+export async function createTask(taskData: CreateTaskData): Promise<Task> {
+   console.log('Creating task:', taskData);
+  const response = await fetch(`${API_BASE_URL}/task/create`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify(taskData),
+  });
+
+  if (!response.ok) {
+     const errorData = await response.json().catch(() => ({ message: 'Failed to create task' }));
+     console.error('API Error:', response.status, errorData);
+    throw new Error(errorData.message || `Failed to create task (${response.status})`);
+  }
+  return response.json();
+}
+
+/**
+ * Type for updating an existing task. All fields are optional except _id.
+ */
+ export type UpdateTaskData = Partial<Omit<Task, '_id' | 'createdBy' | 'createdAt' | 'updatedAt'>>;
+
+
+/**
+ * Updates an existing task via the API.
+ * @param taskId The ID of the task to update.
+ * @param taskData The data to update the task with.
+ * @returns A promise that resolves to the updated Task object.
+ * @throws Throws an error if the update fails.
+ */
+export async function updateTask(taskId: TaskId, taskData: UpdateTaskData): Promise<Task> {
+  console.log(`Updating task ${taskId}:`, taskData);
+  const response = await fetch(`${API_BASE_URL}/task/update/${taskId}`, {
+    method: 'PUT',
+    headers: getHeaders(),
+    body: JSON.stringify(taskData),
+  });
+
+  if (!response.ok) {
+     const errorData = await response.json().catch(() => ({ message: 'Failed to update task' }));
+     console.error('API Error:', response.status, errorData);
+    throw new Error(errorData.message || `Failed to update task (${response.status})`);
+  }
+  return response.json();
+}
+
+/**
+ * Deletes a task via the API.
+ * @param taskId The ID of the task to delete.
+ * @returns A promise that resolves when the deletion is successful.
+ * @throws Throws an error if the deletion fails.
+ */
+export async function deleteTask(taskId: TaskId): Promise<{ message: string }> {
+   console.log(`Deleting task ${taskId}`);
+  const response = await fetch(`${API_BASE_URL}/task/delete/${taskId}`, {
+    method: 'DELETE',
+    headers: getHeaders(),
+  });
+
+  if (!response.ok) {
+     const errorData = await response.json().catch(() => ({ message: 'Failed to delete task' }));
+     console.error('API Error:', response.status, errorData);
+    throw new Error(errorData.message || `Failed to delete task (${response.status})`);
+  }
+  return response.json(); // Expecting { message: "Task deleted successfully" } or similar
+}
+
+
+// --- Mock Data Functions (Keep for Chat/Notifications until integrated) ---
 
 /**
  * Asynchronously retrieves all chat messages for a given chat room.
@@ -214,7 +303,7 @@ export async function getAllNotifications(userId: string): Promise<Notification[
       user: userId,
       message: 'Task "Design Database Schema for Chat" assigned to you.',
       type: 'task',
-      relatedId: 'task_2',
+      relatedId: 'task_2', // This ID might need updating if mock tasks change
       timestamp: new Date(Date.now() - 5 * 60 * 1000).toISOString(), // 5 mins ago
       read: false,
     },
@@ -238,17 +327,3 @@ export async function getAllNotifications(userId: string): Promise<Notification[
     },
   ];
 }
-
-// TODO: Add functions for creating/updating/deleting tasks, sending messages, etc.
-// Example:
-// export async function createTask(taskData: Omit<Task, '_id'>): Promise<Task> {
-//   const response = await fetch(`${API_BASE_URL}/task`, {
-//     method: 'POST',
-//     headers: { 'Content-Type': 'application/json', /* Add Auth header */ },
-//     body: JSON.stringify(taskData),
-//   });
-//   if (!response.ok) {
-//     throw new Error('Failed to create task');
-//   }
-//   return response.json();
-// }
