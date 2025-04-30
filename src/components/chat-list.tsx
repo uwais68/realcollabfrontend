@@ -29,26 +29,29 @@ export function ChatList({ selectedChatRoomId, onSelectChatRoom }: ChatListProps
   const [chatListItems, setChatListItems] = React.useState<ChatListItem[]>([]);
   const [loading, setLoading] = React.useState(true);
   const { toast } = useToast();
-  const { user: currentUser } = useAuth(); // Get current user to exclude from list
+  const { user: currentUser, isLoading: authLoading } = useAuth(); // Get current user and loading state
 
   // TODO: Fetch real chat rooms AND users for direct messages
   React.useEffect(() => {
     const fetchChatListData = async () => {
+      if (authLoading) return; // Wait for auth state to be determined
+
       setLoading(true);
       try {
-        // 1. Fetch potential chat partners (all other users)
-        const users = await getAllUsers();
-        const directChats: ChatListItem[] = users
-           .filter(user => user._id !== currentUser?._id) // Exclude self
-           .map(user => ({
-            // For direct chats, the 'chatRoomId' used in ChatWindow will be the *other user's ID*.
-            // A more robust backend might generate a unique room ID for 1-on-1 chats.
-            // For now, we use the user ID as the identifier for the 1-on-1 chat.
-            id: user._id!,
-            name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email!,
-            type: 'user',
-            profilePicture: user.profilePicture,
-           }));
+         let directChats: ChatListItem[] = [];
+         // Only fetch users if logged in
+         if (currentUser) {
+           // 1. Fetch potential chat partners (all other users)
+           const users = await getAllUsers();
+           directChats = users
+             .filter(user => user._id !== currentUser?._id) // Exclude self
+             .map(user => ({
+               id: user._id!,
+               name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email!,
+               type: 'user',
+               profilePicture: user.profilePicture,
+             }));
+         }
 
         // 2. Fetch group chat rooms (MOCK for now)
         // Replace with API call like `getChatRoomsForUser()` when available
@@ -75,13 +78,9 @@ export function ChatList({ selectedChatRoomId, onSelectChatRoom }: ChatListProps
       }
     };
 
-    if (currentUser) { // Only fetch when the current user is loaded
-      fetchChatListData();
-    } else {
-        setLoading(false); // Stop loading if no user
-    }
+    fetchChatListData(); // Fetch data when component mounts or auth state changes
 
-  }, [toast, currentUser]); // Depend on currentUser
+  }, [toast, currentUser, authLoading]); // Depend on currentUser and authLoading
 
   const getInitials = (name: string) => {
      if (!name) return '??';
@@ -96,7 +95,7 @@ export function ChatList({ selectedChatRoomId, onSelectChatRoom }: ChatListProps
     <ScrollArea className="h-full p-2 border-r"> {/* Added border */}
       <h2 className="text-lg font-semibold p-2 group-data-[collapsible=icon]:hidden">Contacts & Rooms</h2>
       <div className="space-y-1 mt-2">
-         {loading && (
+         {(loading || authLoading) && ( // Show skeleton if either chat list or auth is loading
              [...Array(5)].map((_, i) => (
                  <div key={i} className="flex items-center space-x-3 p-2">
                      <Skeleton className="h-8 w-8 rounded-full" />
@@ -104,7 +103,7 @@ export function ChatList({ selectedChatRoomId, onSelectChatRoom }: ChatListProps
                  </div>
              ))
          )}
-        {!loading && chatListItems.map((item) => (
+        {!loading && !authLoading && chatListItems.map((item) => (
           <Button
             key={item.id}
             variant="ghost"
@@ -124,15 +123,13 @@ export function ChatList({ selectedChatRoomId, onSelectChatRoom }: ChatListProps
             {/* Optional: Add unread count badge here */}
           </Button>
         ))}
-        {!loading && chatListItems.length === 0 && !currentUser && (
+        {!loading && !authLoading && chatListItems.length === 0 && !currentUser && (
              <p className="p-4 text-center text-sm text-muted-foreground">Log in to see chats.</p>
          )}
-         {!loading && chatListItems.length === 0 && currentUser && (
+         {!loading && !authLoading && chatListItems.length === 0 && currentUser && (
              <p className="p-4 text-center text-sm text-muted-foreground">No contacts or rooms found.</p>
          )}
       </div>
     </ScrollArea>
   );
 }
-
-    

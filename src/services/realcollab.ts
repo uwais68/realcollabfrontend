@@ -105,6 +105,7 @@ export interface ChatMessage {
   reactions?: {
     user: UserId;
     emoji: string;
+    _id?: string; // _id might be added by Mongoose subdocuments
   }[];
   /**
    * The delivery status of the message.
@@ -208,7 +209,7 @@ const getHeaders = (): HeadersInit => {
 // --- Authentication API Calls ---
 
 /** Data needed for user registration. */
-export type RegisterData = Pick<User, 'firstName' | 'lastName' | 'email' | 'password' | 'role'>;
+export type RegisterData = Pick<User, 'firstName' | 'lastName' | 'email' | 'password'> & { role?: 'User' | 'Admin' }; // Role is optional here
 
 /**
  * Registers a new user via the API.
@@ -287,7 +288,8 @@ export async function getAllTasks(): Promise<Task[]> {
   const data = await response.json();
   // Backend might return tasks directly or nested, adjust if necessary
   // Check if data has a 'tasks' property or if it's the array itself
-  const tasks = Array.isArray(data) ? data : (data?.tasks || []);
+  // Based on API routes, /all returns the array directly.
+  const tasks = Array.isArray(data) ? data : [];
   console.log(`Fetched ${tasks.length} tasks.`);
   return tasks as Task[];
 }
@@ -325,6 +327,7 @@ export async function createTask(taskData: CreateTaskData): Promise<Task> {
      console.error('API Error (Create Task):', response.status, errorData);
     throw new Error(errorData.message || `Failed to create task (${response.status})`);
   }
+   // Backend returns the created task object directly.
   return response.json();
 }
 
@@ -358,6 +361,7 @@ export async function updateTask(taskId: TaskId, taskData: UpdateTaskData): Prom
      console.error('API Error (Update Task):', response.status, errorData);
     throw new Error(errorData.message || `Failed to update task (${response.status})`);
   }
+  // Backend returns the updated task object.
   return response.json();
 }
 
@@ -416,24 +420,84 @@ export async function getAllNotifications(): Promise<Notification[]> {
    return data as Notification[];
 }
 
-// --- Chat API Calls ---
+// --- Chat API Calls (OLD - Keep for reference or remove if superseded by Message API) ---
+
+// /**
+//  * Sends a chat message via the API.
+//  * Requires authentication.
+//  * @param messageData The data for the message to send.
+//  * @returns A promise resolving to the sent ChatMessage.
+//  * @throws Error if sending fails.
+//  */
+//  export async function sendChatMessage(messageData: SendMessageData): Promise<ChatMessage> {
+//     console.log(`Sending message to room ${messageData.chatRoom}...`);
+//      const response = await fetch(`${API_BASE_URL}/chat/send`, { // Use the correct route path
+//          method: 'POST',
+//          headers: getHeaders(),
+//          body: JSON.stringify(messageData),
+//      });
+
+//      if (!response.ok) {
+//          if (response.status === 401 || response.status === 403) {
+//              throw new Error("Unauthorized: Cannot send message.");
+//          }
+//          const errorData = await response.json().catch(() => ({ message: 'Failed to send message' }));
+//          console.error('API Error (Send Message):', response.status, errorData);
+//          throw new Error(errorData.message || `Failed to send message (${response.status})`);
+//      }
+
+//      const data = await response.json();
+//      // The backend returns { message: "Message sent!", data: message }
+//      return data.data as ChatMessage;
+//  }
+
+
+// /**
+//  * Asynchronously retrieves all chat messages for a given chat room.
+//  * Requires authentication.
+//  * @param chatRoomId The ID of the chat room.
+//  * @returns A promise that resolves to an array of ChatMessage objects.
+//  * @throws Throws an error if fetching fails or if not authenticated.
+//  */
+// export async function getAllChatMessages(chatRoomId: ChatRoomId): Promise<ChatMessage[]> {
+//    console.log(`Fetching messages for room: ${chatRoomId}...`);
+//     // Ensure the API endpoint matches the route definition: /api/chat/:chatRoom/messages
+//    const response = await fetch(`${API_BASE_URL}/chat/${chatRoomId}/messages`, {
+//        method: 'GET',
+//        headers: getHeaders(),
+//    });
+
+//    if (!response.ok) {
+//        if (response.status === 401 || response.status === 403) {
+//            throw new Error("Unauthorized: Please log in to view messages.");
+//        }
+//        const errorData = await response.json().catch(() => ({ message: `Failed to fetch messages for room ${chatRoomId}` }));
+//        console.error(`API Error (Get Messages for ${chatRoomId}):`, response.status, errorData);
+//        throw new Error(errorData.message || `Failed to fetch messages (${response.status})`);
+//    }
+
+//    const data = await response.json();
+//    // API returns the array of messages directly
+//    return data as ChatMessage[];
+// }
+
+// --- New Message API Calls (/api/messages) ---
 
 /**
- * Data needed to send a new chat message.
+ * Data needed to send a new message.
  */
  export type SendMessageData = Pick<ChatMessage, 'chatRoom' | 'content' | 'messageType' | 'fileUrl' | 'replyTo'>;
 
-
 /**
- * Sends a chat message via the API.
+ * Sends a new message via the /api/messages/send endpoint.
  * Requires authentication.
  * @param messageData The data for the message to send.
- * @returns A promise resolving to the sent ChatMessage.
+ * @returns A promise resolving to the newly created ChatMessage.
  * @throws Error if sending fails.
  */
- export async function sendChatMessage(messageData: SendMessageData): Promise<ChatMessage> {
-    console.log(`Sending message to room ${messageData.chatRoom}...`);
-     const response = await fetch(`${API_BASE_URL}/chat/send`, { // Use the correct route path
+ export async function sendMessage(messageData: SendMessageData): Promise<ChatMessage> {
+     console.log(`Sending message to room ${messageData.chatRoom}...`);
+     const response = await fetch(`${API_BASE_URL}/messages/send`, {
          method: 'POST',
          headers: getHeaders(),
          body: JSON.stringify(messageData),
@@ -447,24 +511,21 @@ export async function getAllNotifications(): Promise<Notification[]> {
          console.error('API Error (Send Message):', response.status, errorData);
          throw new Error(errorData.message || `Failed to send message (${response.status})`);
      }
-
      const data = await response.json();
-     // The backend returns { message: "Message sent!", data: message }
-     return data.data as ChatMessage;
+     // Backend returns { message: "...", newMessage: {...} }
+     return data.newMessage as ChatMessage;
  }
 
-
 /**
- * Asynchronously retrieves all chat messages for a given chat room.
+ * Retrieves all messages for a specific chat room via /api/messages/:chatRoom.
  * Requires authentication.
  * @param chatRoomId The ID of the chat room.
  * @returns A promise that resolves to an array of ChatMessage objects.
  * @throws Throws an error if fetching fails or if not authenticated.
  */
-export async function getAllChatMessages(chatRoomId: ChatRoomId): Promise<ChatMessage[]> {
+export async function getAllMessages(chatRoomId: ChatRoomId): Promise<ChatMessage[]> {
    console.log(`Fetching messages for room: ${chatRoomId}...`);
-    // Ensure the API endpoint matches the route definition: /api/chat/:chatRoom/messages
-   const response = await fetch(`${API_BASE_URL}/chat/${chatRoomId}/messages`, {
+   const response = await fetch(`${API_BASE_URL}/messages/${chatRoomId}`, {
        method: 'GET',
        headers: getHeaders(),
    });
@@ -479,88 +540,115 @@ export async function getAllChatMessages(chatRoomId: ChatRoomId): Promise<ChatMe
    }
 
    const data = await response.json();
-   // API returns the array of messages directly
-   return data as ChatMessage[];
+   // Backend returns { messages: [...] }
+   return data.messages as ChatMessage[];
 }
 
-
 /**
- * Marks a specific message as read via the API.
+ * Soft deletes a message for the current user via /api/messages/:messageId.
  * Requires authentication.
- * @param messageId The ID of the message to mark as read.
+ * @param messageId The ID of the message to delete.
  * @returns A promise resolving to the success message.
- * @throws Error if marking as read fails.
+ * @throws Error if deletion fails.
  */
- export async function markMessageAsRead(messageId: MessageId): Promise<{ message: string }> {
-     console.log(`Marking message ${messageId} as read...`);
-     const response = await fetch(`${API_BASE_URL}/chat/mark-as-read`, {
-         method: 'PUT',
-         headers: getHeaders(),
-         body: JSON.stringify({ messageId }),
-     });
-
-     if (!response.ok) {
-         if (response.status === 401 || response.status === 403) {
-             throw new Error("Unauthorized: Cannot mark message as read.");
-         }
-         const errorData = await response.json().catch(() => ({ message: 'Failed to mark message as read' }));
-         console.error('API Error (Mark Read):', response.status, errorData);
-         throw new Error(errorData.message || `Failed to mark as read (${response.status})`);
-     }
-
-     return response.json();
- }
-
-/**
- * Updates the user's typing status via the API.
- * Requires authentication.
- * @param isTyping Whether the user is currently typing.
- * @returns A promise resolving to the success message.
- * @throws Error if updating status fails.
- */
- export async function updateUserTypingStatus(isTyping: boolean): Promise<{ message: string }> {
-     // Debounce this on the frontend to avoid excessive calls
-     console.log(`Updating typing status to: ${isTyping}`);
-     const response = await fetch(`${API_BASE_URL}/chat/typing-status`, {
-         method: 'PUT',
-         headers: getHeaders(),
-         body: JSON.stringify({ isTyping }),
-     });
-
-     if (!response.ok) {
-         // Handle potential errors, though this is less critical than sending messages
-         console.error('API Error (Typing Status):', response.status, await response.text());
-         // Optionally throw an error or just log it
-         // throw new Error(`Failed to update typing status (${response.status})`);
-     }
-
-     return response.json();
- }
-
-
-/**
- * Gets the last seen timestamp for a specific user via the API.
- * Requires authentication.
- * @param userId The ID of the user whose last seen status is requested.
- * @returns A promise resolving to the last seen data.
- * @throws Error if fetching last seen fails.
- */
- export async function getUserLastSeen(userId: UserId): Promise<{ lastSeen: string | null }> {
-     console.log(`Fetching last seen for user: ${userId}`);
-     const response = await fetch(`${API_BASE_URL}/chat/${userId}/last-seen`, {
-         method: 'GET',
+ export async function deleteMessage(messageId: MessageId): Promise<{ message: string }> {
+     console.log(`Deleting message ${messageId} for current user...`);
+     const response = await fetch(`${API_BASE_URL}/messages/${messageId}`, {
+         method: 'DELETE',
          headers: getHeaders(),
      });
 
      if (!response.ok) {
          if (response.status === 401 || response.status === 403) {
-             throw new Error("Unauthorized: Cannot get last seen status.");
+             throw new Error("Unauthorized: Cannot delete message.");
          }
-         const errorData = await response.json().catch(() => ({ message: 'Failed to get last seen status' }));
-         console.error('API Error (Get Last Seen):', response.status, errorData);
-         throw new Error(errorData.message || `Failed to get last seen (${response.status})`);
+         const errorData = await response.json().catch(() => ({ message: 'Failed to delete message' }));
+         console.error('API Error (Delete Message):', response.status, errorData);
+         throw new Error(errorData.message || `Failed to delete message (${response.status})`);
      }
+     return response.json();
+ }
 
+/**
+ * Updates the status of a message via /api/messages/:messageId/status.
+ * Requires authentication.
+ * @param messageId The ID of the message to update.
+ * @param status The new status ('delivered' or 'read').
+ * @returns A promise resolving to the updated message data.
+ * @throws Error if update fails.
+ */
+ export async function updateMessageStatus(messageId: MessageId, status: 'delivered' | 'read'): Promise<{ message: string; updatedMessage: ChatMessage }> {
+     console.log(`Updating message ${messageId} status to ${status}...`);
+     const response = await fetch(`${API_BASE_URL}/messages/${messageId}/status`, {
+         method: 'PUT',
+         headers: getHeaders(),
+         body: JSON.stringify({ status }),
+     });
+
+     if (!response.ok) {
+         if (response.status === 401 || response.status === 403) {
+             throw new Error("Unauthorized: Cannot update message status.");
+         }
+         const errorData = await response.json().catch(() => ({ message: 'Failed to update message status' }));
+         console.error('API Error (Update Status):', response.status, errorData);
+         throw new Error(errorData.message || `Failed to update status (${response.status})`);
+     }
+     return response.json();
+ }
+
+/**
+ * Adds or removes a reaction to a message via /api/messages/:messageId/react.
+ * Requires authentication.
+ * @param messageId The ID of the message to react to.
+ * @param emoji The emoji to add or remove.
+ * @returns A promise resolving to the updated message data.
+ * @throws Error if reacting fails.
+ */
+ export async function reactToMessage(messageId: MessageId, emoji: string): Promise<{ message: string; updatedMessage: ChatMessage }> {
+     console.log(`Reacting to message ${messageId} with ${emoji}...`);
+     const response = await fetch(`${API_BASE_URL}/messages/${messageId}/react`, {
+         method: 'POST',
+         headers: getHeaders(),
+         body: JSON.stringify({ emoji }),
+     });
+
+     if (!response.ok) {
+         if (response.status === 401 || response.status === 403) {
+             throw new Error("Unauthorized: Cannot react to message.");
+         }
+         const errorData = await response.json().catch(() => ({ message: 'Failed to react to message' }));
+         console.error('API Error (React Message):', response.status, errorData);
+         throw new Error(errorData.message || `Failed to react (${response.status})`);
+     }
+     return response.json();
+ }
+
+/**
+ * Sends a reply to a message via /api/messages/:messageId/reply.
+ * Requires authentication.
+ * @param originalMessageId The ID of the message being replied to.
+ * @param replyData The content and type of the reply message.
+ * @returns A promise resolving to the newly created reply message.
+ * @throws Error if replying fails.
+ */
+ export type ReplyMessageData = Pick<ChatMessage, 'content' | 'messageType' | 'fileUrl'>;
+ export async function replyToMessage(originalMessageId: MessageId, replyData: ReplyMessageData): Promise<{ message: string; replyMessage: ChatMessage }> {
+     console.log(`Replying to message ${originalMessageId}...`);
+     const response = await fetch(`${API_BASE_URL}/messages/${originalMessageId}/reply`, {
+         method: 'POST',
+         headers: getHeaders(),
+         // Backend expects content, messageType, fileUrl in the body
+         body: JSON.stringify(replyData),
+     });
+
+     if (!response.ok) {
+         if (response.status === 401 || response.status === 403) {
+             throw new Error("Unauthorized: Cannot reply to message.");
+         }
+         const errorData = await response.json().catch(() => ({ message: 'Failed to send reply' }));
+         console.error('API Error (Reply Message):', response.status, errorData);
+         throw new Error(errorData.message || `Failed to send reply (${response.status})`);
+     }
      return response.json();
  }
 

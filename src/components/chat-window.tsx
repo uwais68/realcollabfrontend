@@ -5,21 +5,30 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Send } from 'lucide-react';
+import { Send, Smile, Trash2, CornerDownLeft, Edit } from 'lucide-react'; // Added icons
 import { cn } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
 import { useSocket } from '@/context/SocketContext';
 import { useAuth } from '@/context/AuthContext'; // Import useAuth
 import {
-    getAllChatMessages,
-    sendChatMessage, // Use the new send function
+    getAllMessages, // Changed from getAllChatMessages
+    sendMessage, // Changed from sendChatMessage
+    deleteMessage,
+    reactToMessage,
+    replyToMessage,
+    updateMessageStatus,
     getUserById,
     type ChatMessage,
-    type SendMessageData
+    type SendMessageData,
+    type ReplyMessageData,
 } from '@/services/realcollab';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import type { User } from '@/context/AuthContext'; // Import User type
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'; // For emoji picker
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { buttonVariants } from '@/components/ui/button';
+
 
 interface ChatWindowProps {
   chatRoomId: string;
@@ -33,6 +42,7 @@ export function ChatWindow({ chatRoomId }: ChatWindowProps) {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [usersInfo, setUsersInfo] = React.useState<Map<string, Partial<User>>>(new Map()); // Cache user info
+  const [replyingTo, setReplyingTo] = React.useState<ChatMessage | null>(null); // For replying
   const scrollAreaRef = React.useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -50,12 +60,11 @@ export function ChatWindow({ chatRoomId }: ChatWindowProps) {
     }
   }, [usersInfo, currentUser?._id]);
 
-  // Fetch initial messages and sender info
+  // Fetch initial messages and sender info using the new API function
   React.useEffect(() => {
     const fetchMessages = async () => {
        if (!currentUser?._id) {
            console.log("ChatWindow: Waiting for current user...");
-           // setLoading(false); // Don't show loading if we're just waiting for auth
            return; // Don't fetch if user isn't loaded yet
        }
       setLoading(true);
@@ -63,13 +72,18 @@ export function ChatWindow({ chatRoomId }: ChatWindowProps) {
       setMessages([]); // Clear previous room messages
       console.log(`Fetching messages for room: ${chatRoomId} (User: ${currentUser._id})`);
       try {
-        const fetchedMessages = await getAllChatMessages(chatRoomId);
+        const fetchedMessages = await getAllMessages(chatRoomId); // Use new function
         console.log(`Fetched ${fetchedMessages.length} messages for room ${chatRoomId}`);
         // Make sure fetched messages conform to ChatMessage interface
         setMessages(fetchedMessages.map(msg => ({
             ...msg,
             timestamp: msg.createdAt || msg.timestamp, // Use createdAt if available, else timestamp
-        })));
+            // Filter out reactions associated with users deleted from the message
+            reactions: msg.reactions?.filter(r => !msg.deletedFor?.includes(r.user)),
+             // Filter message if deleted for current user
+             deletedForCurrentUser: msg.deletedFor?.includes(currentUser._id),
+        })).filter(msg => !msg.deletedForCurrentUser) // Filter out locally deleted messages
+       );
 
 
         // Fetch info for all unique senders in the initial load
@@ -114,116 +128,253 @@ export function ChatWindow({ chatRoomId }: ChatWindowProps) {
     if (!socket || !isConnected || !currentUser?._id) return;
 
     console.log(`Joining room: ${chatRoomId}`);
-    // Use safe emit function from context
     emitEvent('joinRoom', chatRoomId);
 
-    const handleReceiveMessage = (data: any) => { // Use any for now, refine based on actual socket payload
+    const handleReceiveMessage = (data: any) => {
        console.log('Received message data via socket:', data);
 
-       // Adapt the incoming socket data structure to the ChatMessage interface
        const receivedMessage: ChatMessage = {
-           _id: data._id || `temp-socket-${Date.now()}`, // Use ID from socket or generate temp
+           _id: data._id || `temp-socket-${Date.now()}`,
            chatRoom: data.chatRoom,
            sender: data.sender,
            content: data.content,
-           messageType: data.messageType || 'text', // Default to text if not provided
+           messageType: data.messageType || 'text',
            fileUrl: data.fileUrl,
            replyTo: data.replyTo,
-           // Map other fields if they exist in the socket payload
-           timestamp: data.timestamp || new Date().toISOString(), // Use provided timestamp or current time
-           createdAt: data.createdAt || new Date().toISOString(), // Add createdAt
-           updatedAt: data.updatedAt || new Date().toISOString(), // Add updatedAt
-           senderName: data.senderName, // Include senderName if provided by socket
+           reactions: data.reactions || [],
+           status: data.status || 'sent',
+           deletedFor: data.deletedFor || [],
+           timestamp: data.timestamp || new Date().toISOString(),
+           createdAt: data.createdAt || new Date().toISOString(),
+           updatedAt: data.updatedAt || new Date().toISOString(),
+           senderName: data.senderName,
        };
 
-
-       // Ensure the message is for the currently active room
-      if (receivedMessage.chatRoom === chatRoomId) {
+      if (receivedMessage.chatRoom === chatRoomId && !receivedMessage.deletedFor?.includes(currentUser._id)) {
          console.log(`Adding message to room ${chatRoomId}:`, receivedMessage)
-         setMessages((prevMessages) => [...prevMessages, receivedMessage]);
-          // Fetch sender info if needed
+         setMessages((prevMessages) => {
+              // Avoid duplicates if message already exists (e.g., from optimistic update)
+             if (prevMessages.some(msg => msg._id === receivedMessage._id)) {
+                 return prevMessages;
+             }
+             return [...prevMessages, receivedMessage];
+         });
           if (receivedMessage.sender !== currentUser?._id) {
              fetchUserInfo(receivedMessage.sender);
+             // Mark as delivered/read if window is active? (Needs backend logic)
+             // updateMessageStatus(receivedMessage._id, 'delivered');
           }
       } else {
-         console.log(`Message received for different room (${receivedMessage.chatRoom}), ignoring.`);
-         // Optionally show a notification toast for other rooms
-          // toast({ title: `New message in ${data.chatRoom}`, description: data.content });
+         console.log(`Message received for different room (${receivedMessage.chatRoom}) or deleted for user, ignoring.`);
       }
     };
 
+     // Listen for message updates (e.g., reactions, status changes, edits, deletes)
+     const handleMessageUpdate = (updatedMessage: ChatMessage) => {
+        console.log('Received message update via socket:', updatedMessage);
+        if (updatedMessage.chatRoom === chatRoomId) {
+            setMessages(prev => prev.map(msg =>
+                msg._id === updatedMessage._id
+                    ? { ...msg, // Keep existing local state if needed
+                        ...updatedMessage, // Apply updates from socket
+                        // Filter reactions and check deletion status again
+                        reactions: updatedMessage.reactions?.filter(r => !updatedMessage.deletedFor?.includes(r.user)),
+                        deletedForCurrentUser: updatedMessage.deletedFor?.includes(currentUser._id),
+                      }
+                    : msg
+            ).filter(msg => !msg.deletedForCurrentUser)); // Re-apply filter
+        }
+     };
+
+
     socket.on('receiveMessage', handleReceiveMessage);
+    socket.on('messageUpdated', handleMessageUpdate); // Add listener for updates
 
     // Cleanup on component unmount or chatRoomId change
     return () => {
       console.log(`Leaving room: ${chatRoomId}`);
-      emitEvent('leaveRoom', chatRoomId); // Use safe emit
+      emitEvent('leaveRoom', chatRoomId);
       socket.off('receiveMessage', handleReceiveMessage);
+       socket.off('messageUpdated', handleMessageUpdate); // Remove listener
     };
   }, [socket, chatRoomId, isConnected, currentUser?._id, fetchUserInfo, emitEvent]);
 
 
-  const handleSendMessage = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!newMessage.trim() || !currentUser?._id) return;
+   // Function to handle sending either a new message or a reply
+    const handleSendMessageOrReply = async (event: React.FormEvent) => {
+      event.preventDefault();
+      if (!newMessage.trim() || !currentUser?._id) return;
 
-    const messageContent = newMessage; // Store content before clearing
-    setNewMessage(''); // Clear input immediately
+      const messageContent = newMessage;
+      const currentReplyingTo = replyingTo; // Capture replyingTo state at time of send
+      setNewMessage(''); // Clear input
+      setReplyingTo(null); // Clear reply state
 
-    // Prepare data for the API call using SendMessageData type
-    const apiMessageData: SendMessageData = {
-      chatRoom: chatRoomId,
-      content: messageContent,
-      messageType: 'text', // Assuming text messages for now
-      // fileUrl and replyTo can be added later if needed
+      // Prepare base data
+       const baseMessageData = {
+           content: messageContent,
+           messageType: 'text' as const, // Assuming text for now
+           fileUrl: undefined, // Add file upload logic later
+       };
+
+       // Create optimistic message structure
+       const optimisticMessage: ChatMessage = {
+           _id: `temp-${Date.now()}`,
+           chatRoom: chatRoomId,
+           sender: currentUser._id,
+           ...baseMessageData,
+           replyTo: currentReplyingTo?._id, // Set replyTo if applicable
+           reactions: [],
+           deletedFor: [],
+           timestamp: new Date().toISOString(),
+           createdAt: new Date().toISOString(),
+           updatedAt: new Date().toISOString(),
+           status: 'sent',
+           senderName: `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() || currentUser.email,
+       };
+
+      // Optimistic update
+      setMessages((prevMessages) => [...prevMessages, optimisticMessage]);
+
+      try {
+         let sentMessage: ChatMessage;
+         if (currentReplyingTo) {
+             // Call replyToMessage API
+             const replyData: ReplyMessageData = baseMessageData;
+             console.log(`Replying to message ${currentReplyingTo._id} via API:`, replyData);
+             const response = await replyToMessage(currentReplyingTo._id, replyData);
+             sentMessage = response.replyMessage;
+             console.log('Reply sent successfully via API:', sentMessage);
+         } else {
+             // Call sendMessage API
+             const apiMessageData: SendMessageData = {
+                 chatRoom: chatRoomId,
+                 ...baseMessageData,
+             };
+             console.log('Sending message via API:', apiMessageData);
+             sentMessage = await sendMessage(apiMessageData);
+             console.log('Message sent successfully via API:', sentMessage);
+         }
+
+          // Update optimistic message with real data
+         setMessages((prevMessages) =>
+             prevMessages.map((msg) =>
+                 msg._id === optimisticMessage._id
+                 ? { ...sentMessage, timestamp: sentMessage.createdAt, deletedForCurrentUser: false } // Ensure deletion status is correct
+                 : msg
+             )
+         );
+
+         // Optional: Socket emit if backend API doesn't broadcast
+         // emitEvent('sendMessage', { ...sentMessage, senderName: optimisticMessage.senderName });
+
+      } catch (error) {
+         console.error('Failed to send message/reply:', error);
+         toast({
+             title: "Error Sending",
+             description: error instanceof Error ? error.message : "Could not send message.",
+             variant: "destructive",
+         });
+         // Rollback optimistic update
+         setMessages((prevMessages) => prevMessages.filter((msg) => msg._id !== optimisticMessage._id));
+         setNewMessage(messageContent); // Restore input
+         setReplyingTo(currentReplyingTo); // Restore replyingTo state
+      }
     };
 
-     // Create an optimistic message structure matching ChatMessage
-     const optimisticMessage: ChatMessage = {
-        _id: `temp-${Date.now()}`,
-        chatRoom: chatRoomId,
-        sender: currentUser._id,
-        content: messageContent,
-        messageType: 'text',
-        timestamp: new Date().toISOString(),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        status: 'sent', // Optimistic status
-        senderName: `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() || currentUser.email,
+
+    const handleDeleteMessage = async (messageId: string) => {
+        console.log(`Attempting to delete message: ${messageId}`);
+        // Optimistic UI Update: Visually remove the message
+        setMessages(prev => prev.filter(msg => msg._id !== messageId));
+
+        try {
+            await deleteMessage(messageId);
+            toast({
+                title: "Message Deleted",
+                description: "The message has been removed for you.",
+            });
+            // No need to refetch, socket 'messageUpdated' should handle broadcase if needed
+            // Or rely on the optimistic removal.
+        } catch (error) {
+            console.error(`Failed to delete message ${messageId}:`, error);
+            toast({
+                title: "Error Deleting Message",
+                description: error instanceof Error ? error.message : "Could not delete message.",
+                variant: "destructive",
+            });
+            // Rollback: Potentially refetch messages or add the message back
+            // For simplicity, we might just leave it removed optimistically,
+            // or trigger a full refresh:
+            // fetchMessages(); // Replace fetchMessages with the actual fetch function name if different
+        }
     };
 
 
-    // Optimistic update: Add the message immediately to the UI
-    setMessages((prevMessages) => [...prevMessages, optimisticMessage]);
+    const handleReactToMessage = async (messageId: string, emoji: string) => {
+       console.log(`Reacting to message ${messageId} with ${emoji}`);
 
-    try {
-        console.log('Sending message via API:', apiMessageData);
-        const sentMessage = await sendChatMessage(apiMessageData);
-        console.log('Message sent successfully via API:', sentMessage);
+       // Optimistic UI Update
+       setMessages(prevMessages =>
+           prevMessages.map(msg => {
+               if (msg._id === messageId) {
+                   const existingReactionIndex = msg.reactions?.findIndex(
+                       r => r.user === currentUser?._id && r.emoji === emoji
+                   );
+                   let newReactions = [...(msg.reactions || [])];
 
-        // Update the optimistic message with the real ID and timestamp from the server response
-        setMessages((prevMessages) =>
-            prevMessages.map((msg) =>
-                msg._id === optimisticMessage._id ? { ...sentMessage, timestamp: sentMessage.createdAt } : msg // Replace temp msg with real one
-            )
-        );
+                   if (existingReactionIndex !== undefined && existingReactionIndex > -1) {
+                       // Remove existing reaction
+                       newReactions.splice(existingReactionIndex, 1);
+                   } else {
+                        // Remove any previous reaction by the user (optional: allow multiple reactions?)
+                        // newReactions = newReactions.filter(r => r.user !== currentUser?._id);
+                       // Add new reaction
+                       newReactions.push({ user: currentUser!._id, emoji: emoji });
+                   }
+                   return { ...msg, reactions: newReactions };
+               }
+               return msg;
+           })
+       );
 
-        // Optional: Emit via socket if the backend doesn't already handle broadcasting from the API route
-        // This depends on backend setup. If the API route emits, this isn't needed.
-        // emitEvent('sendMessage', { ...sentMessage, senderName: optimisticMessage.senderName });
 
-    } catch (error) {
-        console.error('Failed to send message:', error);
-        toast({
-            title: "Error Sending Message",
-            description: error instanceof Error ? error.message : "Could not send message.",
-            variant: "destructive",
-        });
-        // Remove the optimistic message on failure
-        setMessages((prevMessages) => prevMessages.filter((msg) => msg._id !== optimisticMessage._id));
-        setNewMessage(messageContent); // Restore input content on error
-    }
-  };
+       try {
+           await reactToMessage(messageId, emoji);
+           // Success: Optimistic update is likely sufficient.
+           // Backend should broadcast via socket 'messageUpdated' to other users.
+       } catch (error) {
+            console.error(`Failed to react to message ${messageId}:`, error);
+            toast({
+                title: "Error Reacting",
+                description: error instanceof Error ? error.message : "Could not add reaction.",
+                variant: "destructive",
+            });
+           // TODO: Rollback optimistic update (requires storing original state or refetching)
+            // For now, we'll leave the optimistic state.
+       }
+   };
+
+   // Simple Emoji Picker (replace with a proper component later)
+   const EmojiPicker = ({ onSelectEmoji }: { onSelectEmoji: (emoji: string) => void }) => {
+       const emojis = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+       return (
+           <div className="flex space-x-1 p-1">
+               {emojis.map(emoji => (
+                   <Button
+                       key={emoji}
+                       variant="ghost"
+                       size="icon"
+                       className="h-7 w-7 rounded-full"
+                       onClick={() => onSelectEmoji(emoji)}
+                   >
+                       {emoji}
+                   </Button>
+               ))}
+           </div>
+       );
+   };
+
 
    const getInitials = (firstName?: string, lastName?: string): string => {
      const first = firstName?.[0] || '';
@@ -262,48 +413,146 @@ export function ChatWindow({ chatRoomId }: ChatWindowProps) {
           )}
           {error && <p className="text-destructive text-center">{error}</p>}
           {!loading && !error && messages.map((message) => {
+              // Skip rendering if deleted for the current user
+              if (message.deletedFor?.includes(currentUser._id)) {
+                return null;
+              }
+
               const senderInfo = getUserInfo(message.sender);
               const isCurrentUser = message.sender === currentUser._id;
               const senderName = senderInfo.firstName || senderInfo.lastName ? `${senderInfo.firstName || ''} ${senderInfo.lastName || ''}`.trim() : senderInfo.email ?? 'User';
               const senderInitials = getInitials(senderInfo.firstName, senderInfo.lastName);
+              const replyParent = message.replyTo ? messages.find(m => m._id === message.replyTo) : null;
+              const replyParentSenderInfo = replyParent ? getUserInfo(replyParent.sender) : null;
+              const replyParentSenderName = replyParentSenderInfo?.firstName || replyParentSenderInfo?.lastName ? `${replyParentSenderInfo.firstName || ''} ${replyParentSenderInfo.lastName || ''}`.trim() : replyParentSenderInfo?.email ?? 'User';
+
 
               return (
-                <div
-                    key={message._id} // Use message ID as key
+                 <div
+                    key={message._id}
                     className={cn(
-                    'flex items-end space-x-2 group',
-                    isCurrentUser ? 'justify-end' : 'justify-start'
+                        'flex items-end space-x-2 group relative', // Added relative positioning for actions
+                        isCurrentUser ? 'justify-end' : 'justify-start'
                     )}
-                >
+                 >
+                     {/* Message Actions (Appear on Hover) */}
+                     <div className={cn(
+                         "absolute top-0 -mt-4 flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity bg-muted rounded-full p-1 shadow",
+                         isCurrentUser ? "right-10" : "left-10" // Position near avatar
+                     )}>
+                         <Popover>
+                             <PopoverTrigger asChild>
+                                 <Button variant="ghost" size="icon" className="h-6 w-6" aria-label="React">
+                                     <Smile className="h-4 w-4" />
+                                 </Button>
+                             </PopoverTrigger>
+                             <PopoverContent className="w-auto p-0">
+                                 <EmojiPicker onSelectEmoji={(emoji) => handleReactToMessage(message._id, emoji)} />
+                             </PopoverContent>
+                         </Popover>
+
+                         <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setReplyingTo(message)} aria-label="Reply">
+                             <CornerDownLeft className="h-4 w-4" />
+                         </Button>
+
+                          {/* Edit Button (Placeholder) */}
+                         {/* {isCurrentUser && (
+                             <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => console.log("Edit TBD")} aria-label="Edit">
+                                 <Edit className="h-4 w-4" />
+                             </Button>
+                         )} */}
+
+                         {isCurrentUser && (
+                             <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:text-destructive/80" aria-label="Delete">
+                                        <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                        <AlertDialogTitle>Delete Message?</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                            This will remove the message only for you. Other participants will still see it. This action cannot be undone.
+                                        </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                        <AlertDialogAction
+                                            className={buttonVariants({ variant: "destructive" })}
+                                            onClick={() => handleDeleteMessage(message._id)}
+                                        >
+                                            Delete for Me
+                                        </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                </AlertDialogContent>
+                            </AlertDialog>
+                         )}
+                     </div>
+
+
+                     {/* Avatar (Sender) */}
                     {!isCurrentUser && (
-                    <Avatar className="h-8 w-8">
-                        {/* Use placeholder if profilePicture is missing */}
+                    <Avatar className="h-8 w-8 self-end mb-1"> {/* Align avatar bottom */}
                         <AvatarImage src={senderInfo.profilePicture || `https://picsum.photos/seed/${message.sender}/40/40`} alt={senderName} />
                         <AvatarFallback>{senderInitials}</AvatarFallback>
                     </Avatar>
                     )}
+
+                     {/* Message Bubble */}
                     <div
-                    className={cn(
-                        'max-w-xs lg:max-w-md p-3 rounded-lg shadow-sm',
-                        isCurrentUser
-                        ? 'bg-primary text-primary-foreground rounded-br-none'
-                        : 'bg-muted rounded-bl-none'
-                    )}
+                        className={cn(
+                            'max-w-xs lg:max-w-md p-3 rounded-lg shadow-sm relative', // Added relative for reactions
+                            isCurrentUser
+                            ? 'bg-primary text-primary-foreground rounded-br-none'
+                            : 'bg-muted rounded-bl-none'
+                        )}
                     >
-                        {/* Optional: Show sender name for group chats */}
-                         {/* {!isCurrentUser && <p className="text-xs font-medium mb-1">{senderName}</p>} */}
+                        {/* Reply Context */}
+                        {replyParent && (
+                             <div className={cn(
+                                 "text-xs opacity-80 border-l-2 pl-2 mb-1",
+                                 isCurrentUser ? "border-primary-foreground/50" : "border-primary/50"
+                                 )}>
+                                 Replying to {replyParentSenderInfo?._id === currentUser._id ? "yourself" : replyParentSenderName}:{' '}
+                                 <span className="italic truncate block">{replyParent.content || `(${replyParent.messageType})`}</span>
+                             </div>
+                         )}
+
+                        {/* Message Content */}
                         <p className="text-sm break-words">{message.content}</p>
                         <p className={cn(
                             "text-xs mt-1 opacity-70",
                             isCurrentUser ? 'text-primary-foreground text-right' : 'text-muted-foreground text-left'
                         )}>
-                            {/* Use parseISO for potentially ISO-formatted strings */}
                             {format(parseISO(message.timestamp), 'p')}
+                            {isCurrentUser && message.status && message.status !== 'sent' && ( // Show status ticks for own messages
+                                <span className="ml-1">{message.status === 'read' ? '✓✓' : '✓'}</span>
+                            )}
                         </p>
+
+                        {/* Reactions Display */}
+                        {message.reactions && message.reactions.length > 0 && (
+                            <div className={cn(
+                                "absolute -bottom-3 flex space-x-1 p-0.5 bg-card border rounded-full shadow-sm",
+                                isCurrentUser ? "right-1" : "left-1"
+                            )}>
+                                {message.reactions.slice(0, 3).map((reaction, index) => ( // Show max 3 reactions inline
+                                    <span key={`${reaction.user}-${reaction.emoji}-${index}`} className="text-xs cursor-default" title={getUserInfo(reaction.user).firstName || 'User'}>
+                                        {reaction.emoji}
+                                    </span>
+                                ))}
+                                {message.reactions.length > 3 && (
+                                    <span className="text-xs px-1 text-muted-foreground">+{message.reactions.length - 3}</span>
+                                )}
+                            </div>
+                        )}
+
                     </div>
+
+                     {/* Avatar (Current User) */}
                     {isCurrentUser && (
-                    <Avatar className="h-8 w-8">
-                         {/* Use placeholder if profilePicture is missing */}
+                    <Avatar className="h-8 w-8 self-end mb-1"> {/* Align avatar bottom */}
                         <AvatarImage src={currentUser.profilePicture || `https://picsum.photos/seed/${currentUser._id}/40/40`} alt="You" />
                         <AvatarFallback>{getInitials(currentUser.firstName, currentUser.lastName)}</AvatarFallback>
                     </Avatar>
@@ -317,20 +566,32 @@ export function ChatWindow({ chatRoomId }: ChatWindowProps) {
         </div>
       </ScrollArea>
 
+      {/* Reply Indicator */}
+       {replyingTo && (
+          <div className="p-2 border-t bg-muted/50 text-sm text-muted-foreground flex justify-between items-center">
+             <div className="truncate">
+                Replying to <span className="font-medium">{getUserInfo(replyingTo.sender).firstName || 'User'}</span>:
+                 <span className="italic ml-1">{replyingTo.content || `(${replyingTo.messageType})`}</span>
+             </div>
+             <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setReplyingTo(null)} aria-label="Cancel reply">
+                 <Trash2 className="h-4 w-4" /> {/* Using Trash2 for 'cancel' */}
+             </Button>
+          </div>
+       )}
+
+
       <div className="p-4 border-t bg-background">
-        <form onSubmit={handleSendMessage} className="flex space-x-2">
+        <form onSubmit={handleSendMessageOrReply} className="flex space-x-2">
           <Input
             type="text"
-            placeholder={isConnected ? "Type your message..." : "Connecting..."}
+            placeholder={isConnected ? (replyingTo ? "Type your reply..." : "Type your message...") : "Connecting..."}
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
-             // Disable while authenticating, not connected, or message is empty after trimming
              disabled={authLoading || !isConnected || !currentUser || loading}
             className="flex-1"
             aria-label="Chat message input"
           />
           <Button type="submit"
-                // Disable while authenticating, not connected, message is empty after trimming, or initial messages are loading
                 disabled={authLoading || !isConnected || !newMessage.trim() || !currentUser || loading}
                 size="icon"
                 aria-label="Send message">
@@ -341,5 +602,3 @@ export function ChatWindow({ chatRoomId }: ChatWindowProps) {
     </div>
   );
 }
-
-    
