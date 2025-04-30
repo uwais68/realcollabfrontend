@@ -89,10 +89,15 @@ export function AddMilestoneForm({ taskId, onMilestoneAdded, onCancel }: AddMile
       const result = await createMilestone(apiData);
       console.log('Milestone created successfully:', result.newMilestone);
 
+      // Use intermediate variable for description to avoid potential parsing issues
+      const milestoneName = result.newMilestone?.milestoneName || 'Unknown Milestone';
+      const descriptionText = `Milestone "${milestoneName}" added successfully.`;
+
       toast({
         title: "Milestone Created",
-        description: `Milestone "${result.newMilestone.milestoneName}" added successfully.`,
+        description: descriptionText,
       });
+
       form.reset(); // Reset form after successful submission
       onMilestoneAdded(); // Callback to notify parent component
 
