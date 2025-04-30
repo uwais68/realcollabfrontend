@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, ReactNode, useCallback, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import type { Notification } from '@/services/realcollab'; // Assuming Notification type exists
 import { useToast } from '@/hooks/use-toast';
@@ -18,7 +18,7 @@ interface SocketContextProps {
 const SocketContext = createContext<SocketContextProps | undefined>(undefined);
 
 // Use NEXT_PUBLIC_SOCKET_URL environment variable with a fallback
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3000';
+const SOCKET_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 const AUTH_TOKEN_COOKIE_NAME = 'authToken'; // Keep consistent
 
 // Helper to get token (needed within context setup)
@@ -37,6 +37,7 @@ const getAuthTokenFromCookie = (): string | null => {
 
 export const SocketProvider = ({ children }: { children: ReactNode }) => {
   const [socket, setSocket] = useState<Socket | null>(null);
+  const socketRef = useRef<Socket | null>(null); // Use ref to avoid dependency issues
   const [isConnected, setIsConnected] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const { user, isLoading: authIsLoading } = useAuth(); // Use auth context state
@@ -48,32 +49,37 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
        if (!user || authIsLoading) {
             console.log("SocketProvider: User not loaded or not authenticated, skipping socket connection.");
             // Disconnect if already connected (e.g., on logout)
-            if(socket?.connected) {
+            if(socketRef.current?.connected) {
                 console.log("SocketProvider: Disconnecting existing socket due to user logout/loading.");
-                socket.disconnect();
+                socketRef.current.disconnect();
+                 setSocket(null); // Update state after disconnecting ref
+                 socketRef.current = null;
+                 setIsConnected(false);
             }
-            setSocket(null);
-            setIsConnected(false);
-            return;
+            return null; // Indicate no socket was created/listeners attached
        }
 
         // Avoid reconnecting if already connected with the same ID
-        if (socket?.connected && socket.auth?.userId === user._id) {
+        if (socketRef.current?.connected && socketRef.current.auth?.userId === user._id) {
             console.log("SocketProvider: Already connected with the correct user ID.");
-            return;
+             // Return a no-op cleanup function if already connected correctly
+             return () => {};
         }
 
         // Disconnect previous socket if it exists before creating a new one
-        if(socket) {
+        if(socketRef.current) {
             console.log("SocketProvider: Disconnecting previous socket instance.");
-            socket.disconnect();
+            socketRef.current.disconnect();
+            socketRef.current = null; // Clear ref
+            setSocket(null); // Clear state
+             setIsConnected(false);
         }
 
 
        const token = getAuthTokenFromCookie(); // Get token at the time of connection attempt
        if (!token) {
          console.error("SocketProvider: No auth token found, cannot establish connection.");
-         return; // Don't attempt connection without a token
+         return null; // Don't attempt connection without a token
        }
 
        console.log("SocketProvider: Initializing socket connection for user:", user._id, "to", SOCKET_URL); // Log URL
@@ -81,53 +87,63 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
            // Pass token for authentication on connection
            auth: { token: `Bearer ${token}`, userId: user._id }, // Send token in auth payload
            transports: ['websocket'], // Optional: force websocket transport
+           reconnection: true,
+           reconnectionAttempts: 5,
            // reconnectionAttempts: 5, // Optional: limit reconnection attempts
        });
 
-       setSocket(newSocket); // Set the new socket instance
+       socketRef.current = newSocket; // Store in ref
+       setSocket(newSocket); // Store in state for context consumers
 
         // Connection listeners
-        newSocket.on('connect', () => {
+        const onConnect = () => {
           console.log('Socket connected:', newSocket.id);
           setIsConnected(true);
           // Avoid duplicate connect toasts if connection flaps
           // toast({ title: "Real-time Connected", description: "Ready for collaboration." });
-        });
+        };
 
-        newSocket.on('disconnect', (reason) => {
+        const onDisconnect = (reason: Socket.DisconnectReason) => {
           console.log('Socket disconnected:', reason);
           setIsConnected(false);
-          // Avoid toast if disconnect was intentional (e.g., logout)
+           // Reset socket state/ref on disconnect
+           setSocket(null);
+           socketRef.current = null;
+          // Avoid toast if disconnect was intentional (e.g., logout) or during cleanup
           if (reason !== 'io client disconnect') {
               toast({
                   title: "Disconnected",
-                  description: `Real-time connection lost: ${reason}. Reconnecting...`,
+                  description: `Real-time connection lost: ${reason}. Attempting to reconnect...`,
                   variant: "destructive",
               });
           }
-        });
+        };
 
-        newSocket.on('connect_error', (error) => {
-          console.error('Socket connection error:', error);
-          // Specific handling for auth errors
-           if (error.message.includes("Authentication error")) {
-               toast({
-                  title: "Authentication Error",
-                  description: "Real-time connection failed (invalid token?). Please try logging in again.",
-                  variant: "destructive",
+       const onConnectError = (error: Error) => {
+            console.error('Socket connection error:', error);
+            setIsConnected(false); // Ensure state reflects connection failure
+            setSocket(null); // Clear socket state on error
+            socketRef.current = null; // Clear ref on error
+
+            // Specific handling for auth errors
+            if (error.message.includes("Authentication error") || error.message.includes("Unauthorized")) {
+                toast({
+                    title: "Authentication Error",
+                    description: "Real-time connection failed (invalid token?). Please log in again.",
+                    variant: "destructive",
                 });
-                // Consider logging out the user here if the token is definitively invalid
-                // logout();
+                 // Consider logging out the user here if the token is definitively invalid
+                 // logout(); // Make sure logout is available if needed
             } else {
-               toast({
-                 title: "Connection Error",
-                 description: "Could not connect to real-time server.",
-                 variant: "destructive",
-               });
+                toast({
+                    title: "Connection Error",
+                    description: `Could not connect to real-time server: ${error.message}.`,
+                    variant: "destructive",
+                });
             }
-           setIsConnected(false); // Ensure state reflects connection failure
-           // Optionally schedule a retry or prompt user
-        });
+            // Optionally schedule a retry or prompt user
+       };
+
 
         // Notification listener
         const handleReceiveNotification = (notification: Notification) => {
@@ -145,43 +161,55 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
           });
         };
 
+        newSocket.on('connect', onConnect);
+        newSocket.on('disconnect', onDisconnect);
+        newSocket.on('connect_error', onConnectError);
         newSocket.on('receiveNotification', handleReceiveNotification);
 
-        // Cleanup listeners on socket instance change or unmount
-        return () => {
-            console.log('SocketProvider: Cleaning up listeners for socket:', newSocket.id);
-            newSocket.off('connect');
-            newSocket.off('disconnect');
-            newSocket.off('connect_error');
-            newSocket.off('receiveNotification', handleReceiveNotification);
+        // Cleanup function to remove listeners
+        const cleanup = () => {
+             console.log('SocketProvider: Cleaning up listeners for socket:', newSocket.id);
+             newSocket.off('connect', onConnect);
+             newSocket.off('disconnect', onDisconnect);
+             newSocket.off('connect_error', onConnectError);
+             newSocket.off('receiveNotification', handleReceiveNotification);
+             // Optionally disconnect here too if not handled elsewhere
+             // if (newSocket.connected) {
+             //    newSocket.disconnect();
+             // }
          };
+         return cleanup; // Return cleanup function
 
-   }, [user, authIsLoading, toast, socket]); // Dependencies for re-initialization
+    // Only depend on user and authLoading to re-trigger initialization
+   }, [user, authIsLoading, toast]);
 
 
    // Effect to initialize and cleanup socket based on auth state
    useEffect(() => {
-        const cleanupListeners = initializeSocket(); // Initialize and get cleanup function
+       const cleanupListeners = initializeSocket(); // Initialize and get cleanup function
 
-        // Return the cleanup function for the socket listeners AND disconnect the socket itself
-        return () => {
-            if (cleanupListeners) {
-                cleanupListeners(); // Clean up listeners
-            }
-            if (socket) {
-                console.log('SocketProvider: Disconnecting socket on component unmount or auth change.');
-                socket.disconnect(); // Disconnect socket
-                setSocket(null);
-                setIsConnected(false);
-            }
-        };
-    }, [initializeSocket, socket]); // Re-run when initializeSocket changes (due to user/authLoading change)
+       // Return the cleanup function for the socket listeners AND disconnect the socket itself
+       return () => {
+           if (cleanupListeners) {
+               cleanupListeners(); // Clean up listeners
+           }
+           if (socketRef.current) {
+                console.log('SocketProvider: Disconnecting socket via ref on effect cleanup.');
+                socketRef.current.disconnect(); // Disconnect socket via ref
+                socketRef.current = null;
+                // State update is handled within initializeSocket or disconnect listener now
+           }
+       };
+   // Use initializeSocket as the dependency. It changes when user/authLoading changes.
+   }, [initializeSocket]);
 
 
-   // Safe emit function
+   // Safe emit function - use the socket from state for reactivity
    const emitEvent = useCallback((eventName: string, data: any) => {
-       if (socket && isConnected) {
-           socket.emit(eventName, data);
+       const currentSocket = socketRef.current; // Use ref for emitting
+       if (currentSocket && currentSocket.connected) {
+            console.log(`Emitting event '${eventName}':`, data);
+           currentSocket.emit(eventName, data);
        } else {
            console.warn(`Socket not connected or available. Cannot emit event: ${eventName}`);
            // Optionally queue the event or show an error
@@ -191,10 +219,11 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
                variant: "destructive",
             });
        }
-   }, [socket, isConnected, toast]);
+   }, [toast]); // Doesn't need socket/isConnected dependency
 
 
   return (
+    // Provide the state socket for consumers, but manage connection via ref
     <SocketContext.Provider value={{ socket, isConnected, notifications, setNotifications, emitEvent }}>
       {children}
     </SocketContext.Provider>

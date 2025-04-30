@@ -380,7 +380,10 @@ export async function createTask(taskData: CreateTaskData): Promise<Task> {
       return handleApiError(response, "create task");
   }
    // Backend returns the created task object directly.
-  return response.json();
+  const responseData = await response.json();
+   // Backend task creation returns the created task directly, not nested
+   // e.g. { _id: ..., title: ..., ... }
+  return responseData as Task;
 }
 
 /**
@@ -409,7 +412,14 @@ export async function updateTask(taskId: TaskId, taskData: UpdateTaskData): Prom
       return handleApiError(response, `update task ${taskId}`);
   }
   // Backend returns the updated task object.
-  return response.json();
+   const responseData = await response.json();
+   // Check if the response has the expected structure
+   // Backend returns the updated task directly { _id: ..., title: ... }
+   if (responseData && responseData._id) {
+     return responseData as Task;
+   } else {
+     throw new Error("Invalid response structure after updating task.");
+   }
 }
 
 /**
