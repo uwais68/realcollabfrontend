@@ -7,10 +7,16 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Send } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { useSocket } from '@/context/SocketContext';
 import { useAuth } from '@/context/AuthContext'; // Import useAuth
-import { getAllChatMessages, getUserById, type ChatMessage } from '@/services/realcollab'; // Import getUserById
+import {
+    getAllChatMessages,
+    sendChatMessage, // Use the new send function
+    getUserById,
+    type ChatMessage,
+    type SendMessageData
+} from '@/services/realcollab';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import type { User } from '@/context/AuthContext'; // Import User type
@@ -20,7 +26,7 @@ interface ChatWindowProps {
 }
 
 export function ChatWindow({ chatRoomId }: ChatWindowProps) {
-  const { socket, isConnected } = useSocket();
+  const { socket, isConnected, emitEvent } = useSocket(); // Use emitEvent for socket actions
   const { user: currentUser, isLoading: authLoading } = useAuth(); // Get current user
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = React.useState('');
@@ -59,7 +65,12 @@ export function ChatWindow({ chatRoomId }: ChatWindowProps) {
       try {
         const fetchedMessages = await getAllChatMessages(chatRoomId);
         console.log(`Fetched ${fetchedMessages.length} messages for room ${chatRoomId}`);
-        setMessages(fetchedMessages);
+        // Make sure fetched messages conform to ChatMessage interface
+        setMessages(fetchedMessages.map(msg => ({
+            ...msg,
+            timestamp: msg.createdAt || msg.timestamp, // Use createdAt if available, else timestamp
+        })));
+
 
         // Fetch info for all unique senders in the initial load
         const senderIds = new Set(fetchedMessages.map(msg => msg.sender));
@@ -92,7 +103,7 @@ export function ChatWindow({ chatRoomId }: ChatWindowProps) {
          // Set a short timeout to allow the DOM to update fully
          setTimeout(() => {
             scrollElement.scrollTop = scrollElement.scrollHeight;
-          }, 50);
+          }, 100); // Increased timeout slightly
        }
     }
   }, [messages, loading]);
@@ -103,20 +114,39 @@ export function ChatWindow({ chatRoomId }: ChatWindowProps) {
     if (!socket || !isConnected || !currentUser?._id) return;
 
     console.log(`Joining room: ${chatRoomId}`);
-    socket.emit('joinRoom', chatRoomId);
+    // Use safe emit function from context
+    emitEvent('joinRoom', chatRoomId);
 
-    const handleReceiveMessage = (data: ChatMessage & { chatRoom: string }) => {
+    const handleReceiveMessage = (data: any) => { // Use any for now, refine based on actual socket payload
        console.log('Received message data via socket:', data);
+
+       // Adapt the incoming socket data structure to the ChatMessage interface
+       const receivedMessage: ChatMessage = {
+           _id: data._id || `temp-socket-${Date.now()}`, // Use ID from socket or generate temp
+           chatRoom: data.chatRoom,
+           sender: data.sender,
+           content: data.content,
+           messageType: data.messageType || 'text', // Default to text if not provided
+           fileUrl: data.fileUrl,
+           replyTo: data.replyTo,
+           // Map other fields if they exist in the socket payload
+           timestamp: data.timestamp || new Date().toISOString(), // Use provided timestamp or current time
+           createdAt: data.createdAt || new Date().toISOString(), // Add createdAt
+           updatedAt: data.updatedAt || new Date().toISOString(), // Add updatedAt
+           senderName: data.senderName, // Include senderName if provided by socket
+       };
+
+
        // Ensure the message is for the currently active room
-      if (data.chatRoom === chatRoomId) {
-         console.log(`Adding message to room ${chatRoomId}:`, data)
-         setMessages((prevMessages) => [...prevMessages, data]);
+      if (receivedMessage.chatRoom === chatRoomId) {
+         console.log(`Adding message to room ${chatRoomId}:`, receivedMessage)
+         setMessages((prevMessages) => [...prevMessages, receivedMessage]);
           // Fetch sender info if needed
-          if (data.sender !== currentUser?._id) {
-             fetchUserInfo(data.sender);
+          if (receivedMessage.sender !== currentUser?._id) {
+             fetchUserInfo(receivedMessage.sender);
           }
       } else {
-         console.log(`Message received for different room (${data.chatRoom}), ignoring.`);
+         console.log(`Message received for different room (${receivedMessage.chatRoom}), ignoring.`);
          // Optionally show a notification toast for other rooms
           // toast({ title: `New message in ${data.chatRoom}`, description: data.content });
       }
@@ -127,43 +157,72 @@ export function ChatWindow({ chatRoomId }: ChatWindowProps) {
     // Cleanup on component unmount or chatRoomId change
     return () => {
       console.log(`Leaving room: ${chatRoomId}`);
-      socket.emit('leaveRoom', chatRoomId);
+      emitEvent('leaveRoom', chatRoomId); // Use safe emit
       socket.off('receiveMessage', handleReceiveMessage);
     };
-  }, [socket, chatRoomId, isConnected, currentUser?._id, fetchUserInfo]);
+  }, [socket, chatRoomId, isConnected, currentUser?._id, fetchUserInfo, emitEvent]);
 
 
-  const handleSendMessage = (event: React.FormEvent) => {
+  const handleSendMessage = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!newMessage.trim() || !socket || !isConnected || !currentUser?._id) return;
+    if (!newMessage.trim() || !currentUser?._id) return;
 
-    // TODO: Determine receiverId for 1-on-1 chats if applicable
-    // For group chats, receiverId might not be needed or could be the room ID?
-    // This depends heavily on the backend `sendMessage` event implementation.
-    // If the API assumes the 'chatRoom' param covers group/user chats, we might not need receiverId here.
-    let receiverId: string | undefined = undefined;
-    // Example logic: If chatRoomId doesn't look like a room ID (e.g., based on length or prefix), assume it's a user ID
-    if (chatRoomId.length === 24 && !chatRoomId.startsWith('group_')) { // Example heuristic
-       receiverId = chatRoomId;
-    }
+    const messageContent = newMessage; // Store content before clearing
+    setNewMessage(''); // Clear input immediately
 
-    const messageData: ChatMessage & { chatRoom: string, senderName: string, receiverId?: string } = {
-      _id: `temp-${Date.now()}`, // Temporary ID for optimistic update
-      sender: currentUser._id,
-      content: newMessage,
-      timestamp: new Date().toISOString(),
+    // Prepare data for the API call using SendMessageData type
+    const apiMessageData: SendMessageData = {
       chatRoom: chatRoomId,
-      senderName: `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() || currentUser.email, // Use current user's name
-      receiverId: receiverId, // Send receiverId if determined
+      content: messageContent,
+      messageType: 'text', // Assuming text messages for now
+      // fileUrl and replyTo can be added later if needed
     };
 
-    console.log('Sending message:', messageData);
-    socket.emit('sendMessage', messageData);
+     // Create an optimistic message structure matching ChatMessage
+     const optimisticMessage: ChatMessage = {
+        _id: `temp-${Date.now()}`,
+        chatRoom: chatRoomId,
+        sender: currentUser._id,
+        content: messageContent,
+        messageType: 'text',
+        timestamp: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        status: 'sent', // Optimistic status
+        senderName: `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() || currentUser.email,
+    };
+
 
     // Optimistic update: Add the message immediately to the UI
-    // Ensure the optimistic update also includes senderName
-    setMessages((prevMessages) => [...prevMessages, messageData]);
-    setNewMessage('');
+    setMessages((prevMessages) => [...prevMessages, optimisticMessage]);
+
+    try {
+        console.log('Sending message via API:', apiMessageData);
+        const sentMessage = await sendChatMessage(apiMessageData);
+        console.log('Message sent successfully via API:', sentMessage);
+
+        // Update the optimistic message with the real ID and timestamp from the server response
+        setMessages((prevMessages) =>
+            prevMessages.map((msg) =>
+                msg._id === optimisticMessage._id ? { ...sentMessage, timestamp: sentMessage.createdAt } : msg // Replace temp msg with real one
+            )
+        );
+
+        // Optional: Emit via socket if the backend doesn't already handle broadcasting from the API route
+        // This depends on backend setup. If the API route emits, this isn't needed.
+        // emitEvent('sendMessage', { ...sentMessage, senderName: optimisticMessage.senderName });
+
+    } catch (error) {
+        console.error('Failed to send message:', error);
+        toast({
+            title: "Error Sending Message",
+            description: error instanceof Error ? error.message : "Could not send message.",
+            variant: "destructive",
+        });
+        // Remove the optimistic message on failure
+        setMessages((prevMessages) => prevMessages.filter((msg) => msg._id !== optimisticMessage._id));
+        setNewMessage(messageContent); // Restore input content on error
+    }
   };
 
    const getInitials = (firstName?: string, lastName?: string): string => {
@@ -210,7 +269,7 @@ export function ChatWindow({ chatRoomId }: ChatWindowProps) {
 
               return (
                 <div
-                    key={message._id}
+                    key={message._id} // Use message ID as key
                     className={cn(
                     'flex items-end space-x-2 group',
                     isCurrentUser ? 'justify-end' : 'justify-start'
@@ -218,6 +277,7 @@ export function ChatWindow({ chatRoomId }: ChatWindowProps) {
                 >
                     {!isCurrentUser && (
                     <Avatar className="h-8 w-8">
+                        {/* Use placeholder if profilePicture is missing */}
                         <AvatarImage src={senderInfo.profilePicture || `https://picsum.photos/seed/${message.sender}/40/40`} alt={senderName} />
                         <AvatarFallback>{senderInitials}</AvatarFallback>
                     </Avatar>
@@ -237,11 +297,13 @@ export function ChatWindow({ chatRoomId }: ChatWindowProps) {
                             "text-xs mt-1 opacity-70",
                             isCurrentUser ? 'text-primary-foreground text-right' : 'text-muted-foreground text-left'
                         )}>
-                            {format(new Date(message.timestamp), 'p')}
+                            {/* Use parseISO for potentially ISO-formatted strings */}
+                            {format(parseISO(message.timestamp), 'p')}
                         </p>
                     </div>
                     {isCurrentUser && (
                     <Avatar className="h-8 w-8">
+                         {/* Use placeholder if profilePicture is missing */}
                         <AvatarImage src={currentUser.profilePicture || `https://picsum.photos/seed/${currentUser._id}/40/40`} alt="You" />
                         <AvatarFallback>{getInitials(currentUser.firstName, currentUser.lastName)}</AvatarFallback>
                     </Avatar>
@@ -262,11 +324,16 @@ export function ChatWindow({ chatRoomId }: ChatWindowProps) {
             placeholder={isConnected ? "Type your message..." : "Connecting..."}
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
-            disabled={!isConnected || loading || authLoading || !currentUser }
+             // Disable while authenticating, not connected, or message is empty after trimming
+             disabled={authLoading || !isConnected || !currentUser || loading}
             className="flex-1"
             aria-label="Chat message input"
           />
-          <Button type="submit" disabled={!isConnected || !newMessage.trim() || loading || authLoading || !currentUser} size="icon" aria-label="Send message">
+          <Button type="submit"
+                // Disable while authenticating, not connected, message is empty after trimming, or initial messages are loading
+                disabled={authLoading || !isConnected || !newMessage.trim() || !currentUser || loading}
+                size="icon"
+                aria-label="Send message">
             <Send className="h-4 w-4" />
           </Button>
         </form>
@@ -274,3 +341,5 @@ export function ChatWindow({ chatRoomId }: ChatWindowProps) {
     </div>
   );
 }
+
+    

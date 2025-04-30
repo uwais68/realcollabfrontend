@@ -21,9 +21,8 @@ interface ChatListItem {
 }
 
 interface ChatListProps {
-  // chatRooms prop might be replaced by fetched data
-  selectedChatRoomId: string | null;
-  onSelectChatRoom: (roomId: string, type: 'user' | 'room') => void; // Pass type as well
+  selectedChatRoomId: string | null; // This ID can be a User ID or a Room ID
+  onSelectChatRoom: (id: string, type: 'user' | 'room') => void; // Pass type as well
 }
 
 export function ChatList({ selectedChatRoomId, onSelectChatRoom }: ChatListProps) {
@@ -42,6 +41,9 @@ export function ChatList({ selectedChatRoomId, onSelectChatRoom }: ChatListProps
         const directChats: ChatListItem[] = users
            .filter(user => user._id !== currentUser?._id) // Exclude self
            .map(user => ({
+            // For direct chats, the 'chatRoomId' used in ChatWindow will be the *other user's ID*.
+            // A more robust backend might generate a unique room ID for 1-on-1 chats.
+            // For now, we use the user ID as the identifier for the 1-on-1 chat.
             id: user._id!,
             name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email!,
             type: 'user',
@@ -49,10 +51,12 @@ export function ChatList({ selectedChatRoomId, onSelectChatRoom }: ChatListProps
            }));
 
         // 2. Fetch group chat rooms (MOCK for now)
-        // Replace with API call like `getAllChatRooms()` when available
+        // Replace with API call like `getChatRoomsForUser()` when available
+        // This API should return rooms the current user is a participant in.
         const groupRooms: ChatListItem[] = [
-          // { id: 'room1', name: 'General Discussion', type: 'room' }, // Example group room
-          { id: 'project-alpha', name: 'Project Alpha Team', type: 'room' },
+          // Example group room structure - IDs should come from backend
+          // { id: 'backend-generated-room-id-1', name: 'General Discussion', type: 'room' },
+          // { id: 'backend-generated-room-id-2', name: 'Project Alpha Team', type: 'room' },
         ];
 
 
@@ -106,8 +110,10 @@ export function ChatList({ selectedChatRoomId, onSelectChatRoom }: ChatListProps
             variant="ghost"
             className={cn(
               "w-full justify-start h-auto py-2 px-3",
+              // Highlight if the selected ID matches this item's ID
               selectedChatRoomId === item.id && "bg-accent text-accent-foreground"
             )}
+            // Pass the ID (user or room) and type to the handler
             onClick={() => onSelectChatRoom(item.id, item.type)}
           >
             <Avatar className="h-8 w-8 mr-3">
@@ -128,3 +134,5 @@ export function ChatList({ selectedChatRoomId, onSelectChatRoom }: ChatListProps
     </ScrollArea>
   );
 }
+
+    
