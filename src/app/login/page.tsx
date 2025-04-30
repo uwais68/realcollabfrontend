@@ -6,6 +6,7 @@ import { useForm } from 'react-hook-form';
 import * as z from 'zod';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { LogIn } from 'lucide-react'; // Import an icon
 
 import { Button } from '@/components/ui/button';
 import {
@@ -19,7 +20,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext'; // Import useAuth hook
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 
 const formSchema = z.object({
   email: z.string().email({ message: 'Invalid email address.' }),
@@ -78,31 +79,36 @@ export default function LoginPage() {
   // Render null or a loading indicator while checking auth state
   if (isLoading || user) {
       return (
-          <div className="flex justify-center items-center h-screen">
-              <p>Loading...</p> {/* Or a spinner component */}
+          <div className="flex justify-center items-center h-screen bg-gradient-to-br from-primary/10 via-background to-background">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div> {/* Spinner */}
           </div>
       );
   }
 
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
-       <Card className="w-full max-w-md shadow-lg">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold">Welcome Back!</CardTitle>
-          <CardDescription>Log in to your RealCollab account.</CardDescription>
+     // Apply a subtle gradient background and center the content
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary/10 via-background to-background p-4">
+       {/* Use Card component for better structure and styling */}
+       <Card className="w-full max-w-md shadow-xl border-t-4 border-primary rounded-lg overflow-hidden">
+         <CardHeader className="text-center bg-primary/5 p-6">
+            <div className="mx-auto bg-primary rounded-full p-3 w-fit mb-4 text-primary-foreground">
+                <LogIn size={28} />
+            </div>
+          <CardTitle className="text-3xl font-bold tracking-tight">Welcome Back!</CardTitle>
+          <CardDescription className="text-lg text-muted-foreground">Log in to continue to RealCollab</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-6 space-y-6"> {/* Increased padding and spacing */}
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
               <FormField
                 control={form.control}
                 name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Email</FormLabel>
+                    <FormLabel className="text-base">Email Address</FormLabel> {/* Slightly larger label */}
                     <FormControl>
-                      <Input type="email" placeholder="m@example.com" {...field} disabled={isSubmitting} />
+                      <Input type="email" placeholder="you@example.com" {...field} disabled={isSubmitting} className="text-base py-2.5" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -113,32 +119,33 @@ export default function LoginPage() {
                 name="password"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Password</FormLabel>
+                    <FormLabel className="text-base">Password</FormLabel>
                     <FormControl>
-                      <Input type="password" placeholder="********" {...field} disabled={isSubmitting} />
+                      <Input type="password" placeholder="••••••••" {...field} disabled={isSubmitting} className="text-base py-2.5" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              <Button type="submit" className="w-full" disabled={isSubmitting}>
-                {isSubmitting ? 'Logging In...' : 'Login'}
+              <Button type="submit" className="w-full text-lg py-3" disabled={isSubmitting}>
+                {isSubmitting ? (
+                  <div className="flex items-center justify-center">
+                     <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary-foreground mr-2"></div>
+                     Logging In...
+                  </div>
+                ) : (
+                  'Login'
+                )}
               </Button>
             </form>
           </Form>
-           <div className="mt-4 text-center text-sm">
-             Don't have an account?{" "}
-             <Link href="/register" className="underline text-primary hover:text-primary/80">
-               Sign up
-             </Link>
-            </div>
-             {/* Optional: Add Forgot Password link here */}
-            {/* <div className="mt-2 text-center text-sm">
-                <Link href="/forgot-password" passHref>
-                    <a className="underline text-muted-foreground hover:text-primary">Forgot password?</a>
-                </Link>
-             </div> */}
         </CardContent>
+         <CardFooter className="bg-muted/40 p-4 text-center text-sm justify-center">
+             Don't have an account?{" "}
+             <Link href="/register" className="ml-1 font-semibold text-primary hover:text-primary/80 hover:underline">
+               Sign up now
+             </Link>
+         </CardFooter>
        </Card>
     </div>
   );

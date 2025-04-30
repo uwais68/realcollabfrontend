@@ -6,6 +6,7 @@ import { useForm } from 'react-hook-form';
 import * as z from 'zod';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { UserPlus } from 'lucide-react'; // Import an icon
 
 import { Button } from '@/components/ui/button';
 import {
@@ -19,7 +20,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext'; // Import useAuth hook
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const formSchema = z.object({
@@ -90,31 +91,36 @@ export default function RegisterPage() {
    // Render null or a loading indicator while checking auth state
    if (isLoading || user) {
        return (
-           <div className="flex justify-center items-center h-screen">
-               <p>Loading...</p> {/* Or a spinner component */}
-           </div>
+          <div className="flex justify-center items-center h-screen bg-gradient-to-br from-primary/10 via-background to-background">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div> {/* Spinner */}
+          </div>
        );
    }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
-       <Card className="w-full max-w-md shadow-lg">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold">Create an Account</CardTitle>
-          <CardDescription>Join RealCollab to start collaborating.</CardDescription>
+     // Apply a subtle gradient background and center the content
+     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary/10 via-background to-background p-4">
+       {/* Use Card component for better structure and styling */}
+       <Card className="w-full max-w-lg shadow-xl border-t-4 border-primary rounded-lg overflow-hidden"> {/* Slightly wider card */}
+        <CardHeader className="text-center bg-primary/5 p-6">
+           <div className="mx-auto bg-primary rounded-full p-3 w-fit mb-4 text-primary-foreground">
+                <UserPlus size={28} />
+            </div>
+          <CardTitle className="text-3xl font-bold tracking-tight">Create Your Account</CardTitle>
+          <CardDescription className="text-lg text-muted-foreground">Join RealCollab to start collaborating.</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-6 space-y-6"> {/* Increased padding and spacing */}
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-             <div className="grid grid-cols-2 gap-4">
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6"> {/* Responsive grid */}
               <FormField
                 control={form.control}
                 name="firstName"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>First Name</FormLabel>
+                    <FormLabel className="text-base">First Name</FormLabel>
                     <FormControl>
-                      <Input placeholder="John" {...field} disabled={isSubmitting} />
+                      <Input placeholder="John" {...field} disabled={isSubmitting} className="text-base py-2.5" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -125,9 +131,9 @@ export default function RegisterPage() {
                 name="lastName"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Last Name</FormLabel>
+                    <FormLabel className="text-base">Last Name</FormLabel>
                     <FormControl>
-                      <Input placeholder="Doe" {...field} disabled={isSubmitting} />
+                      <Input placeholder="Doe" {...field} disabled={isSubmitting} className="text-base py-2.5" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -139,9 +145,9 @@ export default function RegisterPage() {
                 name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Email</FormLabel>
+                    <FormLabel className="text-base">Email Address</FormLabel>
                     <FormControl>
-                      <Input type="email" placeholder="m@example.com" {...field} disabled={isSubmitting} />
+                      <Input type="email" placeholder="you@example.com" {...field} disabled={isSubmitting} className="text-base py-2.5" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -152,9 +158,9 @@ export default function RegisterPage() {
                 name="password"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Password</FormLabel>
+                    <FormLabel className="text-base">Password</FormLabel>
                     <FormControl>
-                      <Input type="password" placeholder="********" {...field} disabled={isSubmitting} />
+                      <Input type="password" placeholder="••••••••" {...field} disabled={isSubmitting} className="text-base py-2.5" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -165,9 +171,9 @@ export default function RegisterPage() {
                 name="confirmPassword"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Confirm Password</FormLabel>
+                    <FormLabel className="text-base">Confirm Password</FormLabel>
                     <FormControl>
-                      <Input type="password" placeholder="********" {...field} disabled={isSubmitting} />
+                      <Input type="password" placeholder="••••••••" {...field} disabled={isSubmitting} className="text-base py-2.5" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -195,18 +201,25 @@ export default function RegisterPage() {
                   </FormItem>
                 )}
                /> */}
-              <Button type="submit" className="w-full" disabled={isSubmitting}>
-                {isSubmitting ? 'Creating Account...' : 'Sign Up'}
+              <Button type="submit" className="w-full text-lg py-3" disabled={isSubmitting}>
+                 {isSubmitting ? (
+                  <div className="flex items-center justify-center">
+                     <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary-foreground mr-2"></div>
+                     Creating Account...
+                  </div>
+                ) : (
+                  'Sign Up'
+                )}
               </Button>
             </form>
           </Form>
-           <div className="mt-4 text-center text-sm">
+        </CardContent>
+         <CardFooter className="bg-muted/40 p-4 text-center text-sm justify-center">
              Already have an account?{" "}
-             <Link href="/login" className="underline text-primary hover:text-primary/80">
+             <Link href="/login" className="ml-1 font-semibold text-primary hover:text-primary/80 hover:underline">
                Log in
              </Link>
-            </div>
-        </CardContent>
+         </CardFooter>
        </Card>
     </div>
   );

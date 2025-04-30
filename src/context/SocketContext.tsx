@@ -17,7 +17,7 @@ interface SocketContextProps {
 
 const SocketContext = createContext<SocketContextProps | undefined>(undefined);
 
-// TODO: Replace with your actual backend URL from environment variables
+// Use NEXT_PUBLIC_SOCKET_URL environment variable with a fallback
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3000';
 const AUTH_TOKEN_COOKIE_NAME = 'authToken'; // Keep consistent
 
@@ -76,7 +76,7 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
          return; // Don't attempt connection without a token
        }
 
-       console.log("SocketProvider: Initializing socket connection for user:", user._id);
+       console.log("SocketProvider: Initializing socket connection for user:", user._id, "to", SOCKET_URL); // Log URL
        const newSocket = io(SOCKET_URL, {
            // Pass token for authentication on connection
            auth: { token: `Bearer ${token}`, userId: user._id }, // Send token in auth payload
