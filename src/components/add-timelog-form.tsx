@@ -26,18 +26,15 @@ import {
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
 import { useToast } from "@/hooks/use-toast";
-import { createTimelog, type CreateTimelogData, type TaskId, type Task } from '@/services/realcollab';
+import { createTimelog, type CreateTimelogData, type Task } from '@/services/realcollab'; // Corrected Timelog types
 import { useAuth } from '@/context/AuthContext'; // To get current user ID
 
-// Form schema based on CreateTimelogData
+// Form schema based on new CreateTimelogData (task, timeSpent, description, endDate)
 const formSchema = z.object({
-  // task and user are passed as props/context
-  startTime: z.date({ required_error: "Start date is required." }),
-  endTime: z.date({ required_error: "End date is required." }),
-  notes: z.string().optional(),
-}).refine(data => data.endTime >= data.startTime, {
-    message: "End time cannot be before start time.",
-    path: ["endTime"], // Path of error
+  // task and user are handled outside the form
+  timeSpent: z.coerce.number().min(1, { message: "Time spent must be at least 1 minute." }), // Ensure positive number
+  description: z.string().optional(),
+  endDate: z.date().optional().nullable(), // Optional end date
 });
 
 // Infer the type for the form based on the schema
@@ -57,9 +54,9 @@ export function AddTimelogForm({ task, onTimelogAdded, onCancel }: AddTimelogFor
   const form = useForm<TimelogFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      startTime: undefined,
-      endTime: undefined,
-      notes: '',
+      timeSpent: undefined, // Start empty
+      description: '',
+      endDate: null, // Start with no end date
     },
   });
 
@@ -70,18 +67,13 @@ export function AddTimelogForm({ task, onTimelogAdded, onCancel }: AddTimelogFor
      }
     setIsSubmitting(true);
     try {
-        // Calculate duration in minutes (or adjust as needed based on backend expectation)
-        const durationInMilliseconds = values.endTime.getTime() - values.startTime.getTime();
-        const durationInMinutes = Math.round(durationInMilliseconds / (1000 * 60));
-
-      // Prepare data for API call
+      // Prepare data for API call based on new schema
       const apiData: CreateTimelogData = {
         task: task._id, // Task ID from prop
-        user: user._id, // User ID from auth context
-        startTime: values.startTime.toISOString(),
-        endTime: values.endTime.toISOString(),
-        duration: durationInMinutes, // Send calculated duration
-        notes: values.notes,
+        timeSpent: values.timeSpent, // Time spent in minutes
+        description: values.description,
+        // Convert endDate to ISO string if it exists, otherwise undefined
+        endDate: values.endDate ? values.endDate.toISOString() : undefined,
       };
 
       console.log('Submitting timelog data to API:', apiData);
@@ -109,53 +101,6 @@ export function AddTimelogForm({ task, onTimelogAdded, onCancel }: AddTimelogFor
     }
   }
 
-  // Helper for combined Date/Time Picker - Basic version using two pickers
-  // A more advanced component could combine date and time selection
-    const DateTimePicker = ({ field, label, disabled }: { field: any, label: string, disabled: boolean }) => (
-        <Popover>
-            <PopoverTrigger asChild>
-                <FormControl>
-                    <Button
-                        variant={"outline"}
-                        className={cn(
-                            "w-full justify-start text-left font-normal",
-                            !field.value && "text-muted-foreground"
-                        )}
-                        disabled={disabled}
-                    >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {field.value ? format(field.value, "PPP HH:mm") : <span>{label}</span>}
-                    </Button>
-                </FormControl>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="start">
-                <Calendar
-                    mode="single"
-                    selected={field.value}
-                    onSelect={field.onChange}
-                    disabled={disabled}
-                    initialFocus
-                />
-                 {/* Basic Time Input */}
-                <div className="p-2 border-t">
-                     <Input
-                        type="time"
-                        step="600" // 10-minute intervals
-                        value={field.value ? format(field.value, "HH:mm") : ''}
-                        onChange={(e) => {
-                            const [hours, minutes] = e.target.value.split(':').map(Number);
-                            const newDate = field.value ? new Date(field.value) : new Date();
-                            newDate.setHours(hours, minutes);
-                            field.onChange(newDate);
-                        }}
-                        disabled={disabled}
-                        className="w-full"
-                    />
-                </div>
-            </PopoverContent>
-        </Popover>
-    );
-
 
   return (
     <Form {...form}>
@@ -164,39 +109,66 @@ export function AddTimelogForm({ task, onTimelogAdded, onCancel }: AddTimelogFor
              Logging time for task: <span className='font-medium text-foreground'>{task.title}</span>
          </p>
          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <FormField
+                control={form.control}
+                name="timeSpent"
+                render={({ field }) => (
+                <FormItem>
+                    <FormLabel>Time Spent (Minutes)</FormLabel>
+                     <FormControl>
+                        <Input type="number" placeholder="e.g., 30" {...field} disabled={isSubmitting} min="1"/>
+                    </FormControl>
+                    <FormMessage />
+                </FormItem>
+                )}
+            />
              <FormField
                 control={form.control}
-                name="startTime"
+                name="endDate"
                 render={({ field }) => (
                 <FormItem className="flex flex-col pt-2">
-                    <FormLabel>Start Time</FormLabel>
-                     <DateTimePicker field={field} label="Select start date & time" disabled={isSubmitting} />
+                    <FormLabel>End Date (Optional)</FormLabel>
+                     <Popover>
+                        <PopoverTrigger asChild>
+                        <FormControl>
+                            <Button
+                            variant={"outline"}
+                            className={cn(
+                                "w-full justify-start text-left font-normal",
+                                !field.value && "text-muted-foreground"
+                            )}
+                            disabled={isSubmitting}
+                            >
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {field.value ? format(field.value, "PPP") : <span>Pick end date</span>}
+                            </Button>
+                        </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                            mode="single"
+                            selected={field.value ?? undefined} // Pass undefined if null
+                            onSelect={(date) => field.onChange(date ?? null)} // Send null back if cleared
+                            disabled={isSubmitting}
+                            initialFocus
+                        />
+                        </PopoverContent>
+                    </Popover>
                     <FormMessage />
                 </FormItem>
                 )}
             />
 
-            <FormField
-                control={form.control}
-                name="endTime"
-                render={({ field }) => (
-                <FormItem className="flex flex-col pt-2">
-                    <FormLabel>End Time</FormLabel>
-                    <DateTimePicker field={field} label="Select end date & time" disabled={isSubmitting} />
-                    <FormMessage />
-                </FormItem>
-                )}
-            />
         </div>
 
         <FormField
           control={form.control}
-          name="notes"
+          name="description"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Notes (Optional)</FormLabel>
+              <FormLabel>Work Description (Optional)</FormLabel>
               <FormControl>
-                <Textarea placeholder="Add any notes about the work done" {...field} disabled={isSubmitting}/>
+                <Textarea placeholder="Describe the work done during this time" {...field} disabled={isSubmitting}/>
               </FormControl>
               <FormMessage />
             </FormItem>

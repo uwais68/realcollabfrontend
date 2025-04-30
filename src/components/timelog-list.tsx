@@ -1,13 +1,13 @@
 'use client';
 
 import * as React from 'react';
-import { Clock, Calendar, User, Trash2, RefreshCcw, Info, Edit } from 'lucide-react';
+import { Clock, Calendar, User, Trash2, RefreshCcw, Info, Edit, FileText } from 'lucide-react';
 import { format, formatDistanceStrict, parseISO } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
-import { getTimelogsForTask, deleteTimelog, type Timelog, type TaskId, type UserId, getAllUsers } from '@/services/realcollab';
+import { getTimelogsForTask, type Timelog, type TaskId, type UserId, getAllUsers } from '@/services/realcollab'; // Corrected types and API functions
 import { cn } from '@/lib/utils';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { buttonVariants } from '@/components/ui/button';
@@ -15,12 +15,11 @@ import type { User as AuthUser } from '@/context/AuthContext'; // User type from
 
 interface TimelogListProps {
   taskId: TaskId; // Primarily fetch by task ID
-  // userId?: UserId; // Optional: could be used to filter/highlight user's logs
   refreshKey?: number; // Optional key to trigger refresh
-  // onEditTimelog: (timelog: Timelog) => void; // Callback for edit action
+  // Remove edit/delete props as functionality is removed
 }
 
-export function TimelogList({ taskId, refreshKey /*, onEditTimelog */ }: TimelogListProps) {
+export function TimelogList({ taskId, refreshKey }: TimelogListProps) {
   const [timelogs, setTimelogs] = React.useState<Timelog[]>([]);
   const [usersMap, setUsersMap] = React.useState<Map<string, Partial<AuthUser>>>(new Map());
   const [loading, setLoading] = React.useState(true);
@@ -48,9 +47,9 @@ export function TimelogList({ taskId, refreshKey /*, onEditTimelog */ }: Timelog
     if (showLoading) setLoading(true);
     setError(null);
     try {
-      const fetchedData = await getTimelogsForTask(taskId);
-      // Sort by startTime descending (most recent first)
-      fetchedData.sort((a, b) => parseISO(b.startTime).getTime() - parseISO(a.startTime).getTime());
+      const fetchedData = await getTimelogsForTask(taskId); // Use updated API function
+      // Sort by dateLogged descending (most recent first)
+      fetchedData.sort((a, b) => parseISO(b.dateLogged).getTime() - parseISO(a.dateLogged).getTime());
       setTimelogs(fetchedData);
       console.log(`Fetched ${fetchedData.length} timelogs for task ${taskId}`);
     } catch (err) {
@@ -74,28 +73,10 @@ export function TimelogList({ taskId, refreshKey /*, onEditTimelog */ }: Timelog
         .finally(() => setLoading(false));
   }, [fetchTimelogs, fetchUsers, refreshKey]); // Rerun if taskId, refreshKey changes
 
-  const handleDelete = async (timelogId: TimelogId) => {
-    const originalTimelogs = [...timelogs];
-    // Optimistic update
-    setTimelogs(prev => prev.filter(t => t._id !== timelogId));
-
-    try {
-      await deleteTimelog(timelogId);
-      toast({
-        title: "Timelog Deleted",
-        description: "The time entry has been removed.",
-      });
-    } catch (error) {
-      console.error(`Failed to delete timelog ${timelogId}:`, error);
-      setTimelogs(originalTimelogs); // Rollback
-      const message = error instanceof Error ? error.message : 'Could not delete timelog.';
-      toast({
-        title: "Delete Failed",
-        description: message,
-        variant: "destructive",
-      });
-    }
-  };
+  // Remove handleDelete as the API route is not provided
+  /*
+  const handleDelete = async (timelogId: TimelogId) => { ... }
+  */
 
   const formatDuration = (minutes: number): string => {
       if (minutes < 1) return "< 1 min";
@@ -128,7 +109,7 @@ export function TimelogList({ taskId, refreshKey /*, onEditTimelog */ }: Timelog
               <Skeleton className="h-3 w-1/4" />
             </div>
             <Skeleton className="h-5 w-16 ml-4" />
-            <Skeleton className="h-7 w-7 ml-2 rounded-full" />
+            {/* Removed skeleton for delete button */}
           </div>
         ))}
       </div>
@@ -165,79 +146,40 @@ export function TimelogList({ taskId, refreshKey /*, onEditTimelog */ }: Timelog
         >
            {/* Main Content */}
           <div className="flex-1 min-w-0 space-y-1">
-            {/* User and Date */}
+            {/* User and Date Logged */}
             <div className="flex items-center text-sm text-muted-foreground">
                 <User className="h-4 w-4 mr-1.5 shrink-0" />
                 <span className="font-medium mr-2 text-foreground">{getUserName(timelog.user)}</span>
                 <Calendar className="h-4 w-4 mr-1.5 shrink-0" />
-                <span>{format(parseISO(timelog.startTime), 'PPP')}</span>
+                <span>Logged: {format(parseISO(timelog.dateLogged), 'PPP')}</span>
+                {timelog.endDate && (
+                  <span className="ml-2 text-xs">(Ended: {format(parseISO(timelog.endDate), 'PPP')})</span>
+                )}
              </div>
 
-            {/* Time Range and Duration */}
+            {/* Time Spent */}
             <div className="flex items-center text-sm">
                 <Clock className="h-4 w-4 mr-1.5 text-primary shrink-0" />
-                <span className="font-semibold text-primary">{formatDuration(timelog.duration)}</span>
-                <span className="text-muted-foreground mx-1.5">-</span>
-                <span className="text-muted-foreground">
-                     {format(parseISO(timelog.startTime), 'p')} to {format(parseISO(timelog.endTime), 'p')}
-                 </span>
+                <span className="font-semibold text-primary">{formatDuration(timelog.timeSpent)}</span>
              </div>
 
-            {/* Notes */}
-            {timelog.notes && (
-              <p className="text-xs text-muted-foreground pt-1" title={timelog.notes}>
-                Notes: {timelog.notes}
-              </p>
+            {/* Description */}
+            {timelog.description && (
+              <div className="flex items-start text-xs text-muted-foreground pt-1">
+                 <FileText className="h-3.5 w-3.5 mr-1.5 mt-0.5 shrink-0" />
+                <p className=" " title={timelog.description}>
+                     {timelog.description}
+                 </p>
+              </div>
             )}
           </div>
 
-          {/* Actions */}
+          {/* Actions (Removed as backend doesn't support edit/delete) */}
+          {/*
            <div className="ml-4 flex flex-col space-y-1 items-end shrink-0">
-                {/* <Tooltip>
-                    <TooltipTrigger asChild>
-                         <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7"
-                            // onClick={() => onEditTimelog(timelog)} // TODO: Implement edit functionality
-                            aria-label="Edit Timelog"
-                        >
-                            <Edit className="h-4 w-4" />
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Edit Timelog</TooltipContent>
-                </Tooltip> */}
-
-                 <AlertDialog>
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                             <AlertDialogTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive/80">
-                                    <Trash2 className="h-4 w-4" />
-                                </Button>
-                            </AlertDialogTrigger>
-                        </TooltipTrigger>
-                        <TooltipContent>Delete Timelog</TooltipContent>
-                    </Tooltip>
-                    <AlertDialogContent>
-                        <AlertDialogHeader>
-                            <AlertDialogTitle>Delete Timelog Entry?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                                Are you sure you want to delete this time entry logged by {getUserName(timelog.user)}? This action cannot be undone.
-                            </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction
-                                className={buttonVariants({ variant: "destructive" })}
-                                onClick={() => handleDelete(timelog._id)}
-                            >
-                                Delete
-                            </AlertDialogAction>
-                        </AlertDialogFooter>
-                    </AlertDialogContent>
-                </AlertDialog>
-          </div>
+                <AlertDialog> ... Delete Button ... </AlertDialog>
+           </div>
+           */}
         </div>
       ))}
     </div>
