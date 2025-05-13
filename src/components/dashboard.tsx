@@ -7,24 +7,29 @@ import { ChatWindow } from './chat-window';
 import { NotificationList } from './notification-list';
 import { Button } from '@/components/ui/button';
 import { SidebarTrigger } from '@/components/ui/sidebar';
-import { getAllTasks, Task } from '@/services/realcollab';
+import { getAllNotifications, getAllTasks, Task } from '@/services/realcollab';
 import { TaskDetailsDialog } from './task-details-dialog';
 
 export function Dashboard() {
   // Placeholder for fetching summary data
   // const taskCount = 5;
   const unreadMessages = 3; // Example data
-  const activeNotifications = 2; // Example data
+  // const activeNotifications = 2; // Example data
   const [viewingTask, setViewingTask] = React.useState<Task | null>(null); // State for viewing details
   const [taskCount, setTaskCount] = React.useState<number | 0>(0); // State for viewing details
+  const [notificationCount, setNotificationCount] = React.useState<number | 0>(0); // State for viewing details
 
   const handleViewDialogClose = () => {
     setViewingTask(null);
    };
   async function fun  () {
-    const tasks = await  getAllTasks()
-    const len = tasks.filter((e)=>e.status=="Pending").length
-    setTaskCount(len)
+       getAllTasks().then((tasks)=>{const len = tasks.filter((e)=>e.status=="Pending").length
+      setTaskCount(len)})
+      getAllNotifications().then((notifications)=>{
+        setNotificationCount(notifications.length)
+      })
+
+    
   }
   fun()
   return (
@@ -63,7 +68,7 @@ export function Dashboard() {
               <CardTitle>Notifications</CardTitle>
             </CardHeader>
             <CardContent>
-              <p>{activeNotifications} new notifications.</p>
+              <p>{notificationCount} new notifications.</p>
               {/* Add notification summary info or link */}
             </CardContent>
           </Card>

@@ -314,6 +314,7 @@ export async function sendMessage(messageData: SendMessageAPIData): Promise<Chat
     });
     if (!response.ok) return handleApiError(response, `send message to room ${messageData.chatRoom}`);
     const data = await response.json();
+    
     // chatController.sendMessage returns { message: "Message sent!", data: message }
     return data.data as ChatMessage; // Assuming data.data is the new message object
 }
@@ -327,6 +328,7 @@ export async function getAllMessages(chatRoomId: ChatRoomId): Promise<ChatMessag
    });
    if (!response.ok) return handleApiError(response, `fetch messages for room ${chatRoomId}`);
    const data = await response.json();
+   console.log(data)
    // chatController.getMessages returns messages directly as an array
    return data as ChatMessage[];
 }

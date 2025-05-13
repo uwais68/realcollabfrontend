@@ -32,6 +32,7 @@ export function ChatInterface() {
         try {
           // 'id' is the peerUserId for DM
           const roomData = await getOrCreateDmChatRoom(id);
+          console.log(`Room ID ${roomData._id}`)
           setSelectedChat({ id, type, actualChatRoomId: roomData._id });
           console.log(`Resolved DM room for user ${id} to ChatRoomID: ${roomData._id}`);
         } catch (error) {

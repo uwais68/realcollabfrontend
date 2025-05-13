@@ -94,7 +94,7 @@ export function TimelogList({ taskId, refreshKey }: TimelogListProps) {
 
    const getUserName = (userId: UserId): string => {
        const user = usersMap.get(userId);
-       if (!user) return userId.substring(0, 6) + '...';
+       if (!user) return userId["email"].substring(0, 6) + '...';
        return `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || 'Unknown User';
    }
 

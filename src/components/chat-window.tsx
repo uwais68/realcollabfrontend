@@ -35,6 +35,7 @@ interface ChatWindowProps {
 }
 
 export function ChatWindow({ chatRoomId }: ChatWindowProps) {
+    console.log(`CHAT WINDOW ${chatRoomId}`)
   const { socket, isConnected, emitEvent } = useSocket();
   const { user: currentUser, isLoading: authLoading } = useAuth();
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
@@ -46,7 +47,13 @@ export function ChatWindow({ chatRoomId }: ChatWindowProps) {
   const scrollAreaRef = React.useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   const typingTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
-
+    socket?.on("receiveMessage",(data:ChatMessage)=>{
+        if(data.sender==currentUser){
+        console.log(currentUser)    
+        console.log(data.sender)    
+        setMessages([...messages,data])}
+    })
+    socket?.emit('joinRoom', chatRoomId);
 
   const fetchUserInfo = React.useCallback(async (userId: string) => {
     if (!usersInfo.has(userId) && userId !== currentUser?._id) {
@@ -257,7 +264,9 @@ export function ChatWindow({ chatRoomId }: ChatWindowProps) {
          // The backend's /api/chat/send controller handles saving and should ideally also broadcast via socket.
          // The socket.on('sendMessage') on backend is for client-emitted socket messages.
          // For consistency with saving to DB, HTTP POST is safer unless backend socket handler also saves.
-         const sentMessage = await sendMessage(apiMessageData); // API call
+         const sentMessage = await sendMessage(apiMessageData);
+         socket?.emit("sendMessage",optimisticMessage)
+         // API call
          console.log('Message sent successfully via API, server returned:', sentMessage);
 
          setMessages((prevMessages) =>
@@ -443,15 +452,14 @@ export function ChatWindow({ chatRoomId }: ChatWindowProps) {
         <form onSubmit={handleSendMessageOrReply} className="flex space-x-2">
           <Input
             type="text"
-            placeholder={isConnected ? (replyingTo ? "Type your reply..." : "Type your message...") : "Connecting..."}
+            placeholder=    "Type your message..."  
             value={newMessage}
             onChange={handleInputChange}
-            disabled={authLoading || !isConnected || !currentUser || loading || !chatRoomId}
+            
             className="flex-1"
             aria-label="Chat message input"
           />
-          <Button type="submit"
-                disabled={authLoading || !isConnected || !newMessage.trim() || !currentUser || loading || !chatRoomId}
+          <Button type="submit" 
                 size="icon"
                 aria-label="Send message">
             <Send className="h-4 w-4" />
