@@ -18,7 +18,7 @@ interface SocketContextProps {
 const SocketContext = createContext<SocketContextProps | undefined>(undefined);
 
 // Use NEXT_PUBLIC_SOCKET_URL environment variable with a fallback
-const SOCKET_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:4000';
 const AUTH_TOKEN_COOKIE_NAME = 'authToken'; // Keep consistent
 
 // Helper to get token (needed within context setup)
@@ -161,7 +161,7 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
           });
         };
 
-        newSocket.on('connect', onConnect);
+        newSocket.on('connection', onConnect);
         newSocket.on('disconnect', onDisconnect);
         newSocket.on('connect_error', onConnectError);
         newSocket.on('receiveNotification', handleReceiveNotification);
@@ -169,7 +169,7 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
         // Cleanup function to remove listeners
         const cleanup = () => {
              console.log('SocketProvider: Cleaning up listeners for socket:', newSocket.id);
-             newSocket.off('connect', onConnect);
+             newSocket.off('connection', onConnect);
              newSocket.off('disconnect', onDisconnect);
              newSocket.off('connect_error', onConnectError);
              newSocket.off('receiveNotification', handleReceiveNotification);

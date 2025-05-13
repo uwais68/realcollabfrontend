@@ -119,7 +119,8 @@ export function TaskList({ limit, refreshKey, onEditTask, onViewTask }: TaskList
    const getUserNameById = (userId: string | undefined): string => {
      if (!userId) return 'Unassigned';
      const user = users.get(userId);
-     if (!user) return userId.substring(0, 6) + '...'; // Fallback to short ID if user not found
+    //  console.log(user
+     if (!user) return userId["email"].substring(0, 6) + '...'; // Fallback to short ID if user not found
      return user.firstName || user.lastName ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : user.email ?? 'Unknown User';
    };
 

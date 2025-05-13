@@ -277,8 +277,8 @@ export function EditTaskForm({ task, onTaskUpdated, onCancel }: EditTaskFormProp
               <FormItem>
                 <FormLabel>Assign To</FormLabel>
                  <Select
-                    onValueChange={(value) => field.onChange(value === "" ? null : value)}
-                    value={field.value ?? ""} // Use empty string for 'Unassigned' option value
+                    onValueChange={(value) => field.onChange(value === "unassigned" ? null : value)}
+                    value={field.value ?? "unassigned"} // Use "unassigned" instead of empty string
                     disabled={isSubmitting || loadingUsers}>
                   <FormControl>
                     <SelectTrigger>
@@ -286,7 +286,7 @@ export function EditTaskForm({ task, onTaskUpdated, onCancel }: EditTaskFormProp
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                     <SelectItem value="">
+                     <SelectItem value="unassigned">
                         <span className="text-muted-foreground">Unassigned</span>
                     </SelectItem>
                     {!loadingUsers && users.map((user) => (

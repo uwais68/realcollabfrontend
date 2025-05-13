@@ -219,7 +219,7 @@ export interface Timelog {
 
 // --- API Interaction Functions ---
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
 const AUTH_TOKEN_COOKIE_NAME = 'authToken'; // Consistent cookie name
 
 // Get the auth token from cookies (client-side)
@@ -619,8 +619,8 @@ export async function getAllMessages(chatRoomId: ChatRoomId): Promise<ChatMessag
  * @throws Throws an error if fetching fails or if not authenticated.
  */
  export async function getUserById(userId: UserId): Promise<Partial<User>> {
-    console.log(`Fetching user details for ID: ${userId}`);
-     const response = await fetch(`${API_BASE_URL}/user/${userId}`, { // Assuming GET /api/user/:id exists
+    console.log(`Fetching user details for ID: ${userId["_id"]}`);
+     const response = await fetch(`${API_BASE_URL}/user/${userId["_id"]}`, { // Assuming GET /api/user/:id exists
          method: 'GET',
          headers: getHeaders(),
      });
@@ -637,6 +637,9 @@ export async function getAllMessages(chatRoomId: ChatRoomId): Promise<ChatMessag
      const data = await response.json();
      // Return only necessary fields, exclude sensitive data like password
      const { password, otp, otpExpires, ...safeUserData } = data;
+     console.log("Response data")
+     
+     console.log(safeUserData)
      return safeUserData as Partial<User>;
  }
 
@@ -679,7 +682,7 @@ export async function getAllMessages(chatRoomId: ChatRoomId): Promise<ChatMessag
   */
  export async function getCurrentUser(): Promise<Partial<User>> {
      console.log('Fetching current user info...');
-     const response = await fetch(`${API_BASE_URL}/user/me`, { // Requires a '/api/user/me' endpoint on backend
+     const response = await fetch(`${API_BASE_URL}/auth/me`, { // Requires a '/api/user/me' endpoint on backend
          method: 'GET',
          headers: getHeaders(),
      });

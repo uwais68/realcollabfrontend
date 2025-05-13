@@ -7,13 +7,26 @@ import { ChatWindow } from './chat-window';
 import { NotificationList } from './notification-list';
 import { Button } from '@/components/ui/button';
 import { SidebarTrigger } from '@/components/ui/sidebar';
+import { getAllTasks, Task } from '@/services/realcollab';
+import { TaskDetailsDialog } from './task-details-dialog';
 
 export function Dashboard() {
   // Placeholder for fetching summary data
-  const taskCount = 5; // Example data
+  // const taskCount = 5;
   const unreadMessages = 3; // Example data
   const activeNotifications = 2; // Example data
+  const [viewingTask, setViewingTask] = React.useState<Task | null>(null); // State for viewing details
+  const [taskCount, setTaskCount] = React.useState<number | 0>(0); // State for viewing details
 
+  const handleViewDialogClose = () => {
+    setViewingTask(null);
+   };
+  async function fun  () {
+    const tasks = await  getAllTasks()
+    const len = tasks.filter((e)=>e.status=="Pending").length
+    setTaskCount(len)
+  }
+  fun()
   return (
     <div className="flex flex-col h-screen">
        <header className="flex items-center justify-between p-4 border-b">
@@ -62,7 +75,7 @@ export function Dashboard() {
               <CardTitle>Recent Tasks</CardTitle>
             </CardHeader>
             <CardContent>
-              <TaskList limit={5} />
+              <TaskList limit={5} onViewTask={setViewingTask}/>
             </CardContent>
           </Card>
           <Card>
@@ -87,6 +100,13 @@ export function Dashboard() {
             </CardContent>
           </Card>
       </div>
+       {/* View Task Details Dialog */}
+               <TaskDetailsDialog
+                   task={viewingTask}
+                   isOpen={!!viewingTask}
+                   onClose={handleViewDialogClose}
+               />
     </div>
+    
   );
 }

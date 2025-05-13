@@ -47,6 +47,7 @@ export function TaskDetailsDialog({ task, isOpen, onClose }: TaskDetailsDialogPr
                 setLoadingAssignee(true);
                 try {
                     const userDetails = await getUserById(task.assignedTo);
+                    console.log(userDetails)
                     setAssignee(userDetails);
                 } catch (error) {
                     console.error("Failed to fetch assignee details:", error);

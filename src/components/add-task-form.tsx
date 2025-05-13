@@ -100,7 +100,7 @@ export function AddTaskForm({ onTaskAdded }: { onTaskAdded?: () => void }) {
         ...values,
         dueDate: values.dueDate ? values.dueDate.toISOString() : undefined,
         // assignedTo is already a string (UserId) or null
-        assignedTo: values.assignedTo || null, // Ensure null if empty string
+        assignedTo: values.assignedTo || "Assigned", // Ensure null if empty string
       };
 
       console.log('Submitting task data to API:', apiData);
@@ -238,7 +238,7 @@ export function AddTaskForm({ onTaskAdded }: { onTaskAdded?: () => void }) {
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                     <SelectItem value="">
+                     <SelectItem value="unassigned">
                         <span className="text-muted-foreground">Unassigned</span>
                     </SelectItem>
                     {!loadingUsers && users.map((user) => (
