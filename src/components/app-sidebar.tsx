@@ -3,7 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Home, ListChecks, MessageSquare, Bell, LogOut, UserCircle, Clock } from 'lucide-react';
+import { Home, ListChecks, MessageSquare, Bell, LogOut, UserCircle, Clock, Target } from 'lucide-react'; // Added Target for Milestones
 
 import {
   Sidebar,
@@ -41,7 +41,11 @@ export function AppSidebar() {
     // No need to redirect here, AuthProvider handles redirect on user change
   };
 
-  const isActive = (path: string) => pathname === path || (path !== '/' && pathname.startsWith(path)); // Make parent paths active too
+  const isActive = (path: string) => {
+    if (path === '/') return pathname === path;
+    return pathname.startsWith(path);
+  };
+  
 
   const getUserInitials = (firstName?: string, lastName?: string) => {
     const first = firstName?.[0] || '';
@@ -88,8 +92,37 @@ export function AppSidebar() {
               </SidebarMenuButton>
             </Link>
           </SidebarMenuItem>
-          {/* Milestones link removed */}
-           {/* Timelogs link removed */}
+          <SidebarMenuItem>
+            <Link href="/milestones" passHref legacyBehavior>
+              <SidebarMenuButton
+                asChild
+                isActive={isActive('/milestones')}
+                tooltip="Milestones"
+              >
+                <a>
+                  <Target /> 
+                  <span>Milestones</span>
+                </a>
+              </SidebarMenuButton>
+            </Link>
+          </SidebarMenuItem>
+          {/* Timelogs page doesn't exist yet, if it does, add a link similar to milestones */}
+          {/* Example for Timelogs if a page /timelogs exists:
+           <SidebarMenuItem>
+            <Link href="/timelogs" passHref legacyBehavior>
+              <SidebarMenuButton
+                asChild
+                isActive={isActive('/timelogs')}
+                tooltip="Timelogs"
+              >
+                <a>
+                  <Clock />
+                  <span>Timelogs</span>
+                </a>
+              </SidebarMenuButton>
+            </Link>
+          </SidebarMenuItem>
+          */}
           <SidebarMenuItem>
             <Link href="/chat" passHref legacyBehavior>
               <SidebarMenuButton
