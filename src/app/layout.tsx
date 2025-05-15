@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'RealCollab Frontend',
+  title: 'CollabFlow Frontend',
   description: 'Real-time collaborative workspace',
 };
 

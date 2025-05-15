@@ -8,7 +8,7 @@ body {
 
 @layer base {
   :root {
-    /* Light Theme - RealCollab */
+    /* Light Theme - CollabFlow */
     --background: 0 0% 98%; /* Slightly off-white/light gray */
     --foreground: 0 0% 15%; /* Dark gray/near black */
     --card: 0 0% 100%;
@@ -47,7 +47,7 @@ body {
   }
 
   .dark {
-    /* Dark Theme - RealCollab (Example, adjust as needed) */
+    /* Dark Theme - CollabFlow (Example, adjust as needed) */
     --background: 0 0% 10%; /* Dark background */
     --foreground: 0 0% 95%; /* Light foreground */
     --card: 0 0% 15%;

@@ -61,11 +61,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             const decoded = jwtDecode<DecodedToken>(newToken);
             const expires = new Date(decoded.exp * 1000);
             console.log("Setting auth cookie, expires:", expires.toUTCString());
-            document.cookie = `${AUTH_TOKEN_COOKIE_NAME}=${encodeURIComponent(newToken)}; path=/; expires=${expires.toUTCString()}; SameSite=Lax; Secure`; // Add Secure in production
+            document.cookie = `${AUTH_TOKEN_COOKIE_NAME}=${encodeURIComponent(newToken)}; path=/; expires=${expires.toUTCString()}; SameSite=Lax;`; // Add Secure in production
         } else {
              console.log("Removing auth cookie");
             // Remove cookie by setting expiration date in the past
-            document.cookie = `${AUTH_TOKEN_COOKIE_NAME}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax; Secure`; // Add Secure in production
+            document.cookie = `${AUTH_TOKEN_COOKIE_NAME}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax;`; // Add Secure in production
         }
     };
 

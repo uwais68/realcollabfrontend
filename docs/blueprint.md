@@ -1,10 +1,10 @@
-# **App Name**: RealCollab Frontend
+# **App Name**: CollabFlow Frontend
 
 ## Core Features:
 
-- Data Presentation: Display tasks, chat and notifications fetched from the RealCollab API. Implement a responsive design for different screen sizes.
+- Data Presentation: Display tasks, chat and notifications fetched from the CollabFlow API. Implement a responsive design for different screen sizes.
 - Interactive UI Elements: Implement user interface components for task creation, chat messaging, and notification management.
-- API Integration: Integrate with the RealCollab API (https://github.com/uwais68/realcollab) to fetch and update data in real-time using web sockets.
+- API Integration: Integrate with the CollabFlow API (https://github.com/uwais68/realcollab) to fetch and update data in real-time using web sockets.
 
 ## Style Guidelines:
 

@@ -107,7 +107,7 @@ export default function RegisterPage() {
                 <UserPlus size={28} />
             </div>
           <CardTitle className="text-3xl font-bold tracking-tight">Create Your Account</CardTitle>
-          <CardDescription className="text-lg text-muted-foreground">Join RealCollab to start collaborating.</CardDescription>
+          <CardDescription className="text-lg text-muted-foreground">Join CollabFlow to start collaborating.</CardDescription>
         </CardHeader>
         <CardContent className="p-6 space-y-6"> {/* Increased padding and spacing */}
           <Form {...form}>

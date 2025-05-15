@@ -48,7 +48,7 @@ export function ChatWindow({ chatRoomId }: ChatWindowProps) {
   const { toast } = useToast();
   const typingTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
     socket?.on("receiveMessage",(data:ChatMessage)=>{
-        if(data.sender==currentUser){
+        if(data.sender===currentUser){
         console.log(currentUser)    
         console.log(data.sender)    
         setMessages([...messages,data])}

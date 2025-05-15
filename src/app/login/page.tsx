@@ -96,7 +96,7 @@ export default function LoginPage() {
                 <LogIn size={28} />
             </div>
           <CardTitle className="text-3xl font-bold tracking-tight text-center">Yoo</CardTitle>
-          <CardDescription className="text-lg text-muted-foreground">Log in to continue to RealCollab</CardDescription>
+          <CardDescription className="text-lg text-muted-foreground">Log in to continue to CollabFlow</CardDescription>
         </CardHeader>
         <CardContent className="p-6 space-y-6"> {/* Increased padding and spacing */}
           <Form {...form}>

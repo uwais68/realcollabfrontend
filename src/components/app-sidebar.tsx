@@ -58,7 +58,7 @@ export function AppSidebar() {
     <Sidebar side="left" variant="sidebar" collapsible="icon">
       <SidebarHeader className="items-center justify-between">
         <span className="text-lg font-semibold group-data-[collapsible=icon]:hidden">
-          RealCollab
+          CollabFlow
         </span>
         <SidebarTrigger className="md:hidden" />
       </SidebarHeader>
