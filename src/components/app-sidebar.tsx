@@ -106,6 +106,20 @@ export function AppSidebar() {
               </SidebarMenuButton>
             </Link>
           </SidebarMenuItem>
+           <SidebarMenuItem>
+            <Link href="/files" passHref legacyBehavior>
+              <SidebarMenuButton
+                asChild
+                isActive={isActive('/files')}
+                tooltip="files"
+              >
+                <a>
+                  <Target /> 
+                  <span>files</span>
+                </a>
+              </SidebarMenuButton>
+            </Link>
+          </SidebarMenuItem>
           {/* Timelogs page doesn't exist yet, if it does, add a link similar to milestones */}
           {/* Example for Timelogs if a page /timelogs exists:
            <SidebarMenuItem>
