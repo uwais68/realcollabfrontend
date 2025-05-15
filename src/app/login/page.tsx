@@ -23,7 +23,7 @@ import { useAuth } from '@/context/AuthContext'; // Import useAuth hook
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 
 const formSchema = z.object({
-  email: z.string().email({ message: 'Invalid email address.' }),
+  email: z.string().email({ message: 'Invalid email address.' }), 
   password: z.string().min(1, { message: 'Password is required.' }),
 });
 
